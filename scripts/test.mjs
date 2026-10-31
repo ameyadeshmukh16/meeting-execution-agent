@@ -13,6 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { verifyEvidence } from "../lib/evidence.ts";
+import { stripInternalIds } from "../lib/redact.ts";
 import { isPlainApproval, parseEvidenceAcceptance, parseProceedAnyway, parseResolution } from "../lib/resolution.ts";
 
 const APP_PORT = 3100;
@@ -138,6 +139,23 @@ test("verifyEvidence: valid, missing, fabricated, wrong speaker, short, normalis
   assert.deepEqual(verifyEvidence(t, { quote: "I will ship it tomorrow morning", speaker: "Gowtham" }), { ok: false, issue: "not_found" });
   assert.deepEqual(verifyEvidence(t, { quote: "Yes, Wednesday works.", speaker: "Ameya" }), { ok: false, issue: "wrong_speaker" });
   assert.deepEqual(verifyEvidence(t, { quote: "yes", speaker: "Gowtham" }), { ok: false, issue: "not_found" });
+});
+
+test("internal decision ids are replaced with plain language, and nothing else is touched", () => {
+  const ids = ["d1", "d2", "L3"];
+  // The exact sentence the model produced for Meeting 2.
+  assert.equal(
+    stripInternalIds("d1 requires Postgres as the primary database for all new services to avoid operating multiple systems.", ids),
+    "The earlier decision requires Postgres as the primary database for all new services to avoid operating multiple systems.",
+  );
+  assert.equal(stripInternalIds("This breaks decision d1 and also d2.", ids), "This breaks the earlier decision and also the earlier decision.");
+  assert.equal(stripInternalIds("It conflicts with the earlier decision L3.", ids), "It conflicts with the earlier decision.");
+  assert.equal(stripInternalIds("See D1 first. D2 follows.", ids), "See the earlier decision first. The earlier decision follows.");
+  // Only exact known ids, as whole words.
+  assert.equal(stripInternalIds("Ship before the Q1 release; d10 and d1x are different things.", ids), "Ship before the Q1 release; d10 and d1x are different things.");
+  assert.equal(stripInternalIds("Nothing to change here.", ids), "Nothing to change here.");
+  assert.equal(stripInternalIds("d1 stays as written", []), "d1 stays as written");
+  assert.equal(stripInternalIds("", ids), "");
 });
 
 test("spoken command parsing is strict about what it accepts", () => {

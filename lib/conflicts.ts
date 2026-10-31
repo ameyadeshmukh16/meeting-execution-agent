@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Evidence } from "./confirm";
 import { completeJson } from "./llm";
 import { dataPath } from "./paths";
+import { stripInternalIds } from "./redact";
 
 /** What the user decided to do about a conflict. Only "replace" retires the earlier decision. */
 export type Resolution = "replace" | "keep_both" | "needs_clarification";
@@ -184,6 +185,9 @@ export async function detectConflicts(newDecisions: string[], pastOverride?: Pas
     ModelSchema,
   );
 
+  // Applied after parsing, so it also cleans replayed (cached) answers. Internal ids are for us, not for people.
+  const ids = past.map((d) => d.id);
+
   // Never trust model-supplied metadata: resolve the id and drop hallucinated references.
   return result.conflicts.flatMap((c) => {
     const target = byId.get(c.conflictsWithId);
@@ -192,9 +196,9 @@ export async function detectConflicts(newDecisions: string[], pastOverride?: Pas
       {
         newDecision: c.newDecision,
         conflictsWith: target,
-        reasoning: c.reasoning,
+        reasoning: stripInternalIds(c.reasoning, ids),
         type: c.type,
-        suggestedResolution: c.suggestedResolution,
+        suggestedResolution: c.suggestedResolution ? stripInternalIds(c.suggestedResolution, ids) : undefined,
       },
     ];
   });
