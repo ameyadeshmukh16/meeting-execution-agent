@@ -318,5 +318,473 @@
    }
   ],
   "reply": "I'm creating the tasks as listed."
+ },
+ "18ca12e62b5776cdd9d1a5abc1ae080090503d2d2b4b15f427741d92c31318e3": {
+  "decisions": [
+   {
+    "text": "Use Postgres for all new services.",
+    "madeBy": "Ameya",
+    "topic": "new service database",
+    "evidence": {
+     "quote": "Postgres for all new services, done.",
+     "speaker": "Ameya"
+    }
+   },
+   {
+    "text": "Use REST with OpenAPI specs and no GraphQL this quarter.",
+    "madeBy": "Gowtham",
+    "topic": "API design",
+    "evidence": {
+     "quote": "For APIs, I'm keeping REST with OpenAPI specs. No GraphQL this quarter.",
+     "speaker": "Gowtham"
+    }
+   }
+  ],
+  "actionItems": [
+   {
+    "task": "Set up Postgres schema for billing",
+    "owner": "Gowtham",
+    "deadline": "2026-10-07",
+    "deadlineText": "next Wednesday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "Gowtham, can you set up the Postgres schema for billing by next Wednesday?",
+     "speaker": "Ameya"
+    }
+   }
+  ]
+ },
+ "ed18128a54d23cce2db3c43c1b4cec09704fbc02997efc78e8de1cc81bcbcd57": {
+  "conflicts": []
+ },
+ "d61e61b4bb589e61b90436d07e134e8fc8b6eea21138faec8d8baba12fb2c8c9": {
+  "intent": "confirm",
+  "actionItems": [
+   {
+    "task": "Set up Postgres schema for billing",
+    "owner": "Gowtham",
+    "deadline": "2026-10-07",
+    "deadlineText": "next Wednesday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "Gowtham, can you set up the Postgres schema for billing by next Wednesday?",
+     "speaker": "Ameya"
+    },
+    "evidenceVerified": true
+   }
+  ],
+  "reply": "Got it, I'm creating the task as is. Anything else?"
+ },
+ "b1258b63134776a65ee697d5a0851bcc8492ec2cea1bdb498560393c1624ba72": {
+  "decisions": [
+   {
+    "text": "Switch to Mongo for billing.",
+    "madeBy": "Ameya",
+    "topic": "billing database",
+    "evidence": {
+     "quote": "Let's switch to Mongo for billing.",
+     "speaker": "Ameya"
+    }
+   },
+   {
+    "text": "Use Memcached for the invoice cache.",
+    "madeBy": "Ameya",
+    "topic": "invoice cache",
+    "evidence": {
+     "quote": "actually no, let's go with Memcached instead.",
+     "speaker": "Ameya"
+    }
+   }
+  ],
+  "actionItems": [
+   {
+    "task": "Set up Mongo for billing",
+    "owner": "Gowtham",
+    "deadline": "2026-10-28",
+    "deadlineText": "Wednesday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "Gowtham, you own the Mongo setup for billing. Can you have that done by Wednesday?",
+     "speaker": "Ameya"
+    }
+   },
+   {
+    "task": "Set up Memcached cache layer",
+    "owner": "Priya",
+    "deadline": "2026-10-29",
+    "deadlineText": "Thursday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "Priya, I need the Memcached cache layer ready by Thursday.",
+     "speaker": "Ameya"
+    }
+   },
+   {
+    "task": "Write invoice table migration plan",
+    "owner": "Priya",
+    "deadline": "2026-11-02",
+    "deadlineText": "next Monday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "Also I'll write the migration plan from the old invoice tables, by next Monday.",
+     "speaker": "Priya"
+    }
+   },
+   {
+    "task": "Update billing API docs",
+    "owner": "Ameya",
+    "deadline": "2026-10-30",
+    "deadlineText": "Friday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "And I'll update the API docs for the billing endpoints by Friday.",
+     "speaker": "Ameya"
+    }
+   }
+  ]
+ },
+ "763973fc0c1c8a61840856ce2a0e5c076a5495e51938e35a9d431b8d0175f7e3": {
+  "conflicts": [
+   {
+    "newDecision": "Switch to Mongo for billing.",
+    "conflictsWithId": "d1",
+    "reasoning": "d1 requires Postgres as the primary database for all new services to avoid operating multiple systems, but switching billing to Mongo would add a second primary database and break that standardization.",
+    "type": "direct_contradiction",
+    "suggestedResolution": "Confirm with the architecture owner before replacing the Postgres decision for billing."
+   }
+  ]
+ },
+ "2ccdba0af7c7ecaac6a67c466b4e850f475d60f3f1c4459ce219100dd48fb6de": {
+  "impact": [
+   {
+    "decision": "Switch to Mongo for billing.",
+    "affectedTaskIds": [
+     "ab204f40"
+    ],
+    "affectedSystems": [
+     "Billing",
+     "Postgres",
+     "Mongo"
+    ],
+    "potentialConsequences": [
+     "The Postgres schema setup may need to be cancelled or replaced with Mongo data modeling.",
+     "Billing queries and migrations may need to be redesigned for a document store.",
+     "Related services expecting Postgres may need re-examination."
+    ]
+   },
+   {
+    "decision": "Use Memcached for the invoice cache.",
+    "affectedTaskIds": [],
+    "affectedSystems": [],
+    "potentialConsequences": []
+   }
+  ]
+ },
+ "693c1c59e107cd0af7dfb4c898ca9cda31a2b1c3c7047664177a0d2525432f2e": {
+  "intent": "edit",
+  "actionItems": [
+   {
+    "task": "Set up Mongo for billing",
+    "owner": "Gowtham",
+    "deadline": "2026-10-28",
+    "deadlineText": "Wednesday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "Gowtham, you own the Mongo setup for billing. Can you have that done by Wednesday?",
+     "speaker": "Ameya"
+    },
+    "evidenceVerified": true
+   },
+   {
+    "task": "Set up Memcached cache layer",
+    "owner": "Priya",
+    "deadline": "2026-10-30",
+    "deadlineText": "Friday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "Priya, I need the Memcached cache layer ready by Thursday.",
+     "speaker": "Ameya"
+    },
+    "evidenceVerified": true
+   },
+   {
+    "task": "Write invoice table migration plan",
+    "owner": "Priya",
+    "deadline": "2026-11-02",
+    "deadlineText": "next Monday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "Also I'll write the migration plan from the old invoice tables, by next Monday.",
+     "speaker": "Priya"
+    },
+    "evidenceVerified": true
+   },
+   {
+    "task": "Update billing API docs",
+    "owner": "Ameya",
+    "deadline": "2026-10-30",
+    "deadlineText": "Friday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "And I'll update the API docs for the billing endpoints by Friday.",
+     "speaker": "Ameya"
+    },
+    "evidenceVerified": true
+   }
+  ],
+  "reply": "Done, the second task is now due Friday, October 30. Anything else?"
+ },
+ "c98b1448b5ecb3fa86884bddfb69db54ed848b789b2cd2c0331df049ca9419be": {
+  "intent": "confirm",
+  "actionItems": [
+   {
+    "task": "Set up Mongo for billing",
+    "owner": "Gowtham",
+    "deadline": "2026-10-28",
+    "deadlineText": "Wednesday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "Gowtham, you own the Mongo setup for billing. Can you have that done by Wednesday?",
+     "speaker": "Ameya"
+    },
+    "evidenceVerified": true
+   },
+   {
+    "task": "Set up Memcached cache layer",
+    "owner": "Priya",
+    "deadline": "2026-10-30",
+    "deadlineText": "Friday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "Priya, I need the Memcached cache layer ready by Thursday.",
+     "speaker": "Ameya"
+    },
+    "evidenceVerified": true
+   },
+   {
+    "task": "Write invoice table migration plan",
+    "owner": "Priya",
+    "deadline": "2026-11-02",
+    "deadlineText": "next Monday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "Also I'll write the migration plan from the old invoice tables, by next Monday.",
+     "speaker": "Priya"
+    },
+    "evidenceVerified": true
+   },
+   {
+    "task": "Update billing API docs",
+    "owner": "Ameya",
+    "deadline": "2026-10-30",
+    "deadlineText": "Friday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "And I'll update the API docs for the billing endpoints by Friday.",
+     "speaker": "Ameya"
+    },
+    "evidenceVerified": true
+   }
+  ],
+  "reply": "Got it, I'm creating the tasks now."
+ },
+ "68071ed32d0c553240fc2acc8a2ce9f9eaab54d03b712686c92a596016188ad5": {
+  "decisions": [
+   {
+    "text": "Move billing back to Postgres.",
+    "madeBy": "Ameya",
+    "topic": "billing database",
+    "evidence": {
+     "quote": "let's just move billing back to Postgres.",
+     "speaker": "Ameya"
+    }
+   }
+  ],
+  "actionItems": [
+   {
+    "task": "Write Mongo to Postgres export script",
+    "owner": "Gowtham",
+    "deadline": "2026-11-05",
+    "deadlineText": "Thursday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "Gowtham, please write the Mongo to Postgres export script by Thursday.",
+     "speaker": "Ameya"
+    }
+   },
+   {
+    "task": "Point cache layer at Postgres",
+    "owner": "Priya",
+    "deadline": "2026-11-09",
+    "deadlineText": "next Monday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "I'll point the cache layer at Postgres instead, by next Monday.",
+     "speaker": "Priya"
+    }
+   },
+   {
+    "task": "Look at cache invalidation",
+    "owner": "Priya",
+    "deadline": null,
+    "deadlineText": null,
+    "ownership": "unclear",
+    "evidence": {
+     "quote": "I can look into it, no promises.",
+     "speaker": "Priya"
+    }
+   },
+   {
+    "task": "Update billing architecture doc",
+    "owner": "Ameya",
+    "deadline": "2026-11-06",
+    "deadlineText": "Friday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "I'll update the billing architecture doc by Friday.",
+     "speaker": "Ameya"
+    }
+   }
+  ]
+ },
+ "508d38a243c37b6c31ea4a40567880c3b5e8cea9f26861d96493999e940c790b": {
+  "impact": [
+   {
+    "decision": "Move billing back to Postgres.",
+    "affectedTaskIds": [
+     "09de0976",
+     "f23d177f"
+    ],
+    "affectedSystems": [
+     "Postgres",
+     "Mongo",
+     "Billing"
+    ],
+    "potentialConsequences": [
+     "The Mongo setup task may need to be cancelled or repurposed.",
+     "The invoice table migration plan may need to be rewritten to target Postgres.",
+     "The Postgres schema task may be prioritized or expanded to support the move."
+    ]
+   }
+  ]
+ },
+ "a8d23c53a33de8638c3c714b107000f4ba236071d437575f72c3602c651ce5a5": {
+  "conflicts": [
+   {
+    "newDecision": "Move billing back to Postgres.",
+    "conflictsWithId": "L1",
+    "reasoning": "The past decision switched billing to Mongo, replacing the previous Postgres choice. Moving back to Postgres would reverse that switch and undo the billing database decision made in Sprint Planning 14.",
+    "type": "direct_contradiction",
+    "suggestedResolution": "Confirm with the architecture owner before replacing the Mongo billing decision."
+   }
+  ]
+ },
+ "15978876df30ab32bb9956d53993e5b94354fa4605ac596434ffe072fd75e436": {
+  "intent": "edit",
+  "actionItems": [
+   {
+    "task": "Write Mongo to Postgres export script",
+    "owner": "Gowtham",
+    "deadline": "2026-11-05",
+    "deadlineText": "Thursday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "Gowtham, please write the Mongo to Postgres export script by Thursday.",
+     "speaker": "Ameya"
+    },
+    "evidenceVerified": true
+   },
+   {
+    "task": "Point cache layer at Postgres",
+    "owner": "Priya",
+    "deadline": "2026-11-09",
+    "deadlineText": "next Monday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "I'll point the cache layer at Postgres instead, by next Monday.",
+     "speaker": "Priya"
+    },
+    "evidenceVerified": true
+   },
+   {
+    "task": "Look at cache invalidation",
+    "owner": "Priya",
+    "deadline": "2026-11-06",
+    "deadlineText": "Friday",
+    "ownership": "assigned",
+    "evidence": {
+     "quote": "I can look into it, no promises.",
+     "speaker": "Priya"
+    },
+    "evidenceVerified": true
+   },
+   {
+    "task": "Update billing architecture doc",
+    "owner": "Ameya",
+    "deadline": "2026-11-06",
+    "deadlineText": "Friday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "I'll update the billing architecture doc by Friday.",
+     "speaker": "Ameya"
+    },
+    "evidenceVerified": true
+   }
+  ],
+  "reply": "Done, Priya now owns the cache invalidation task and it's due Friday, November 6th. Anything else?"
+ },
+ "03081da5c9cecce9cf080b310487fb3b7566904d9bf2a1f9da0375cb5d640806": {
+  "intent": "confirm",
+  "actionItems": [
+   {
+    "task": "Write Mongo to Postgres export script",
+    "owner": "Gowtham",
+    "deadline": "2026-11-05",
+    "deadlineText": "Thursday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "Gowtham, please write the Mongo to Postgres export script by Thursday.",
+     "speaker": "Ameya"
+    },
+    "evidenceVerified": true
+   },
+   {
+    "task": "Point cache layer at Postgres",
+    "owner": "Priya",
+    "deadline": "2026-11-09",
+    "deadlineText": "next Monday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "I'll point the cache layer at Postgres instead, by next Monday.",
+     "speaker": "Priya"
+    },
+    "evidenceVerified": true
+   },
+   {
+    "task": "Look at cache invalidation",
+    "owner": "Priya",
+    "deadline": "2026-11-06",
+    "deadlineText": "Friday",
+    "ownership": "assigned",
+    "evidence": {
+     "quote": "I can look into it, no promises.",
+     "speaker": "Priya"
+    },
+    "evidenceVerified": true
+   },
+   {
+    "task": "Update billing architecture doc",
+    "owner": "Ameya",
+    "deadline": "2026-11-06",
+    "deadlineText": "Friday",
+    "ownership": "accepted",
+    "evidence": {
+     "quote": "I'll update the billing architecture doc by Friday.",
+     "speaker": "Ameya"
+    },
+    "evidenceVerified": true
+   }
+  ],
+  "reply": "I'm creating the tasks now. Anything else?"
  }
 }

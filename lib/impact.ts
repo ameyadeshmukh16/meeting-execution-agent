@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { completeJson } from "./llm";
 import { loadItems } from "./store";
@@ -36,9 +37,15 @@ Rules:
 
 /** Tasks that exist and are not known to have failed. We do not sync done-status from Trello. */
 export async function loadExistingTasks(): Promise<ExistingTask[]> {
+  // Ids are derived from content, not the random record id, so an identical situation produces an
+  // identical prompt and the replay cache can serve it.
+  const stableId = (i: { meeting: string; task: string; owner: string | null }) =>
+    createHash("sha1").update(`${i.meeting}|${i.task}|${i.owner}`).digest("hex").slice(0, 8);
+  const seen = new Set<string>();
   return (await loadItems())
     .filter((i) => i.status !== "failed")
-    .map((i) => ({ id: i.id, task: i.task, owner: i.owner, deadline: i.deadline, meeting: i.meeting }));
+    .map((i) => ({ id: stableId(i), task: i.task, owner: i.owner, deadline: i.deadline, meeting: i.meeting }))
+    .filter((t) => !seen.has(t.id) && !!seen.add(t.id));
 }
 
 export async function assessImpact(newDecisions: string[], tasksOverride?: ExistingTask[]): Promise<Impact[]> {

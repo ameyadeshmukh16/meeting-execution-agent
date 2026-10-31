@@ -139,6 +139,8 @@ export default function MeetingPage() {
   const [items, setItems] = useState<ActionItem[]>([]);
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [impact, setImpact] = useState<ImpactEntry[]>([]);
+  const [impactFailed, setImpactFailed] = useState(false);
+  const [archiveOnReset, setArchiveOnReset] = useState(true);
   const [resolutions, setResolutions] = useState<Record<string, Resolution>>({});
   const [utterance, setUtterance] = useState("");
   const [assistant, setAssistant] = useState("");
@@ -158,6 +160,7 @@ export default function MeetingPage() {
 
   async function analyze() {
     setError(null);
+    setImpactFailed(false);
     try {
       setBusy("Extracting decisions and action items…");
       const ex = await post<{ decisions: Decision[]; actionItems: ActionItem[] }>("/api/extract", { transcript, meetingDate });
@@ -166,7 +169,11 @@ export default function MeetingPage() {
       // Conflict detection and impact assessment are independent questions; ask them together.
       const [{ conflicts }, { impact }] = await Promise.all([
         post<{ conflicts: Conflict[] }>("/api/conflicts", { decisions: texts }),
-        post<{ impact: ImpactEntry[] }>("/api/impact", { decisions: texts }),
+        // Impact is advisory: if it fails, conflicts and approval still work, and we say so.
+        post<{ impact: ImpactEntry[] }>("/api/impact", { decisions: texts }).catch(() => {
+          setImpactFailed(true);
+          return { impact: [] as ImpactEntry[] };
+        }),
       ]);
       // The server keeps what is being reviewed; only its id comes back to the client.
       const proposal = await post<{ approvalId: string }>("/api/proposals", {
@@ -254,8 +261,17 @@ export default function MeetingPage() {
   }
 
   async function resetMemory() {
-    await fetch("/api/tasks", { method: "DELETE" });
-    setMemoryNote("Cleared learned decisions and saved tasks (Trello cards untouched).");
+    setError(null);
+    try {
+      const res = await fetch(`/api/tasks${archiveOnReset ? "?archive=1" : ""}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
+      setMemoryNote(
+        `Cleared learned decisions and saved tasks. ${archiveOnReset ? `Archived ${json.archived} Trello card(s)${json.archiveFailed ? `, ${json.archiveFailed} failed` : ""}.` : "Trello cards untouched."}`,
+      );
+    } catch (e) {
+      setError(String(e));
+    }
   }
 
   function reset() {
@@ -306,6 +322,10 @@ export default function MeetingPage() {
             <button className="ghost" disabled={!!busy} onClick={resetMemory}>
               Reset demo memory
             </button>
+            <label className="inline">
+              <input type="checkbox" checked={archiveOnReset} onChange={(e) => setArchiveOnReset(e.target.checked)} />
+              also archive Trello cards created by this app
+            </label>
             {memoryNote && <span className="muted">{memoryNote}</span>}
           </div>
         </section>
@@ -313,6 +333,9 @@ export default function MeetingPage() {
 
       {phase === "review" && (
         <>
+          {impactFailed && (
+            <p className="muted">Impact check was unavailable for this meeting, so potential impact is not shown. Conflicts below are unaffected.</p>
+          )}
           {conflicts.map((c, i) => (
             <section key={i} className="conflict">
               <div className="badge">

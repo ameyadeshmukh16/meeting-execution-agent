@@ -42,6 +42,8 @@ a { color: var(--accent); }
 .pill.overdue { color: var(--danger); background: var(--danger-bg); border-color: var(--danger); }
 .pill.soon { color: #b45309; border-color: #b45309; }
 .tabs { margin-bottom: 16px; }
+label.inline { flex-direction: row; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; }
+label.inline input { width: auto; }
 .impact { margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 8px; background: var(--card); }
 .impact ul { margin: 4px 0 8px; }
 .choices { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }

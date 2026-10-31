@@ -3,7 +3,7 @@ import { z } from "zod";
 import { clearProposals, getProposal, updateProposal, withLock } from "@/lib/proposals";
 import { recordDecisions, resetLearnedDecisions } from "@/lib/conflicts";
 import { loadItems, saveItems, type StoredItem } from "@/lib/store";
-import { createCard, hasRef, listCards, trelloConfigured } from "@/lib/trello";
+import { archiveCard, createCard, hasRef, listCards, trelloConfigured } from "@/lib/trello";
 
 const BodySchema = z.object({ approvalId: z.string() });
 
@@ -94,10 +94,27 @@ export async function POST(req: Request) {
   });
 }
 
-/** Demo reset: forget confirmed tasks, proposals and learned decisions. Does not touch Trello. */
-export async function DELETE() {
+/**
+ * Demo reset: forget confirmed tasks, proposals and learned decisions.
+ * With ?archive=1 it also archives the Trello cards this app created (only those it has a link for).
+ */
+export async function DELETE(req: Request) {
+  const archive = new URL(req.url).searchParams.get("archive") === "1" && trelloConfigured();
+  let archived = 0;
+  let archiveFailed = 0;
+  if (archive) {
+    for (const item of await loadItems()) {
+      if (!item.trelloUrl) continue;
+      try {
+        await archiveCard(item.trelloUrl);
+        archived++;
+      } catch {
+        archiveFailed++;
+      }
+    }
+  }
   await saveItems([]);
   await clearProposals();
   await resetLearnedDecisions();
-  return Response.json({ ok: true });
+  return Response.json({ ok: true, archived, archiveFailed });
 }

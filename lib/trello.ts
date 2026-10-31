@@ -32,4 +32,15 @@ export async function listCards(): Promise<{ desc: string; shortUrl: string }[]>
   return res.json();
 }
 
+/** Archives (closes) a card by its short URL. Used by the demo reset for cards this app created. */
+export async function archiveCard(shortUrl: string): Promise<void> {
+  const id = shortUrl.split("/c/")[1]?.split("/")[0];
+  if (!id) throw new Error("Not a Trello card URL");
+  const res = await fetch(
+    `https://api.trello.com/1/cards/${id}?closed=true&key=${process.env.TRELLO_KEY}&token=${process.env.TRELLO_TOKEN}`,
+    { method: "PUT" },
+  );
+  if (!res.ok) throw new Error(`Trello ${res.status}`);
+}
+
 export const hasRef = (card: { desc: string }, ref: string) => card.desc.includes(refMarker(ref));
