@@ -7,6 +7,11 @@ export type StoredItem = ActionItem & {
   meeting: string;
   meetingDate: string;
   trelloUrl?: string;
+  /** `approvalId:index`, the idempotency key for this item. Absent on records from before approvals. */
+  key?: string;
+  /** Absent on older records, which were all created. */
+  status?: "created" | "failed";
+  error?: string;
 };
 
 const FILE = path.join(process.cwd(), "data", "items.json");

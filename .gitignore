@@ -42,3 +42,4 @@ next-env.d.ts
 /data/items.json
 /data/learned-decisions.json
 !.env.example
+/data/proposals.json

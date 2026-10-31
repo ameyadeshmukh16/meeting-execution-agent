@@ -8,6 +8,8 @@ type Decision = { text: string; madeBy?: string };
 type PastDecision = { id: string; meeting: string; date: string; decision: string; rationale: string };
 type Conflict = { newDecision: string; conflictsWith: PastDecision; reasoning: string };
 type Phase = "input" | "review" | "done";
+type ExecItem = ActionItem & { status?: "created" | "failed"; trelloUrl?: string; error?: string };
+type ExecResult = { trello: boolean; total: number; created: number; failed: number; items: ExecItem[] };
 
 const DEMOS = [
   { name: "meeting1", label: "Meeting 1 (baseline)", date: "2026-10-06", title: "Sprint Planning 12" },
@@ -48,7 +50,8 @@ export default function MeetingPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [memoryNote, setMemoryNote] = useState("");
-  const [result, setResult] = useState<{ trello: boolean; errors: string[]; urls: (string | undefined)[] } | null>(null);
+  const [result, setResult] = useState<ExecResult | null>(null);
+  const [approvalId, setApprovalId] = useState("");
   const replyRef = useRef<HTMLInputElement>(null);
 
   async function loadDemo(d: (typeof DEMOS)[number]) {
@@ -65,6 +68,18 @@ export default function MeetingPage() {
       const ex = await post<{ decisions: Decision[]; actionItems: ActionItem[] }>("/api/extract", { transcript, meetingDate });
       setBusy("Checking against past decisions…");
       const { conflicts } = await post<{ conflicts: Conflict[] }>("/api/conflicts", { decisions: ex.decisions.map((d) => d.text) });
+      // The server keeps what is being reviewed; only its id comes back to the client.
+      const proposal = await post<{ approvalId: string }>("/api/proposals", {
+        meeting: meetingName,
+        meetingDate,
+        actionItems: ex.actionItems,
+        // Confirming a conflicting decision replaces the earlier one in the store.
+        decisions: ex.decisions.map((d) => ({
+          text: d.text,
+          supersedes: conflicts.find((c) => c.newDecision === d.text)?.conflictsWith.id,
+        })),
+      });
+      setApprovalId(proposal.approvalId);
       setDecisions(ex.decisions);
       setItems(ex.actionItems);
       setConflicts(conflicts);
@@ -79,19 +94,18 @@ export default function MeetingPage() {
     }
   }
 
-  async function createTasks(final: ActionItem[]) {
-    const r = await post<{ items: { trelloUrl?: string }[]; trello: boolean; errors: string[] }>("/api/tasks", {
-      meeting: meetingName,
-      meetingDate,
-      actionItems: final,
-      // Confirming a conflicting decision replaces the earlier one in the store.
-      decisions: decisions.map((d) => ({
-        text: d.text,
-        supersedes: conflicts.find((c) => c.newDecision === d.text)?.conflictsWith.id,
-      })),
-    });
-    setResult({ trello: r.trello, errors: r.errors, urls: r.items.map((i) => i.trelloUrl) });
-    setPhase("done");
+  /** Safe to call again: the server only creates items that don't exist yet. */
+  async function executeTasks() {
+    setError(null);
+    setBusy("Creating tasks…");
+    try {
+      setResult(await post<ExecResult>("/api/tasks", { approvalId }));
+      setPhase("done");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function respond() {
@@ -100,16 +114,18 @@ export default function MeetingPage() {
     setBusy("Understanding your response…");
     try {
       const r = await post<{ intent: "confirm" | "edit" | "cancel"; actionItems: ActionItem[]; reply: string }>("/api/confirm", {
+        approvalId,
         utterance,
-        actionItems: items,
-        meetingDate,
       });
       setUtterance("");
       setAssistant(r.reply);
       speak(r.reply);
       if (r.intent === "edit") setItems(r.actionItems);
-      if (r.intent === "confirm") await createTasks(r.actionItems);
       if (r.intent === "cancel") reset();
+      if (r.intent === "confirm") {
+        setBusy(null);
+        await executeTasks();
+      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -128,6 +144,7 @@ export default function MeetingPage() {
     setItems([]);
     setConflicts([]);
     setAssistant("");
+    setApprovalId("");
     setResult(null);
     window.speechSynthesis?.cancel();
   }
@@ -248,22 +265,34 @@ export default function MeetingPage() {
 
       {phase === "done" && result && (
         <section className="card">
-          <h2>✅ {items.length} tasks created</h2>
+          <h2>
+            {result.failed === 0 ? "✅" : "⚠"} {result.created} of {result.total} tasks created
+          </h2>
           <p className="muted">
             {result.trello ? "Cards were created on your Trello board." : "Trello is not configured yet, so tasks were saved locally only."}
           </p>
-          {result.errors.map((e, i) => (
-            <p key={i} className="err">{e}</p>
-          ))}
           <ul>
-            {items.map((a, i) => (
+            {result.items.map((a, i) => (
               <li key={i}>
                 {a.task} — {a.owner}, {fmtDate(a.deadline)}{" "}
-                {result.urls[i] && <a href={result.urls[i]} target="_blank">card</a>}
+                {a.status === "failed" ? (
+                  <span className="err">failed: {a.error}</span>
+                ) : (
+                  a.trelloUrl && <a href={a.trelloUrl} target="_blank">card</a>
+                )}
               </li>
             ))}
           </ul>
-          <button onClick={reset}>New meeting</button>
+          <div className="row">
+            {result.failed > 0 && (
+              <button onClick={executeTasks} disabled={!!busy}>
+                {busy ?? `Retry ${result.failed} failed`}
+              </button>
+            )}
+            <button className={result.failed > 0 ? "ghost" : ""} onClick={reset}>
+              New meeting
+            </button>
+          </div>
         </section>
       )}
 

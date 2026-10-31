@@ -282,5 +282,41 @@
    }
   ],
   "reply": "I'm creating those three tasks now."
+ },
+ "68bd48f073101c9f46737a35ad293c385186806901cf70ebc25ad366c1fb22a8": {
+  "intent": "confirm",
+  "actionItems": [
+   {
+    "task": "TEST card A",
+    "owner": "Tester",
+    "deadline": "2026-11-20",
+    "deadlineText": "test"
+   },
+   {
+    "task": "TEST card B",
+    "owner": "Tester",
+    "deadline": null,
+    "deadlineText": null
+   }
+  ],
+  "reply": "Got it, I'm creating those two tasks now. Anything else?"
+ },
+ "99fe60213e3bad63a7b50ee2fdcd7db0061c9984d6adc6bddf3a0bfe9defd948": {
+  "intent": "confirm",
+  "actionItems": [
+   {
+    "task": "TEST card C",
+    "owner": "Tester",
+    "deadline": null,
+    "deadlineText": null
+   },
+   {
+    "task": "TEST card D",
+    "owner": "Tester",
+    "deadline": null,
+    "deadlineText": null
+   }
+  ],
+  "reply": "I'm creating the tasks as listed."
  }
 }
