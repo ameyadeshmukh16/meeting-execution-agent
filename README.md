@@ -69,7 +69,12 @@ Every validated model reply is saved to `data/llm-cache.<provider>-<model>.json`
 
 Automatic speaker diarization (speaker tags are typed in the transcript), audio transcription, real email/SMS reminders, scheduled weekly digests, user authentication or verified approver identity, multi-user concurrency, a true dependency graph between decisions and tasks, and syncing task done-status back from Trello (impact treats tasks as "created, not tracked as done"). Storage is flat JSON files, fine for one user on one machine. **The approval check guards against bugs, replays and duplicates; it does not identify who approved, and it is not an access-control boundary.**
 
-Known gap: if one new decision conflicts with two earlier ones, only the first is retired by "Replace".
+Known gaps:
+
+- If one new decision conflicts with two earlier ones, only the first is retired by "Replace".
+- **Decision evidence is shown but does not block approval.** Task evidence is enforced; a decision whose quote is unverified is flagged on the review page yet can still be stored in decision memory. Do not claim every stored decision is evidence-grounded.
+- The proposal API accepts client-supplied fields such as `evidenceVerified`. The normal UI gets them from server-side extraction, but the API does not re-check the original transcript when a proposal is created, so a hand-crafted request could mark evidence as verified. Fine for a controlled single-user demo; not a defence against a malicious client.
+- "Keep both" records that two decisions stand side by side; it does not record where each one applies.
 
 ## Claims to avoid in a pitch
 

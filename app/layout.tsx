@@ -29,6 +29,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <Link href="/digest">Digest</Link>
           <Link href="/deadlines">Deadlines</Link>
         </nav>
+        <div className="strip">
+          <p className="tagline">Turn meeting decisions into accountable work, without losing the context behind them.</p>
+        </div>
         <main>{children}</main>
       </body>
     </html>

@@ -330,6 +330,11 @@ export default function MeetingPage() {
 
       {phase === "input" && (
         <section className="card">
+          <h2>Start with a meeting</h2>
+          <p className="muted intro">
+            Paste or dictate a speaker-tagged transcript. The agent extracts decisions and tasks, checks them against what the team
+            already decided, and waits for your approval before creating anything.
+          </p>
           <div className="row">
             {DEMOS.map((d) => (
               <button key={d.name} className="ghost" onClick={() => loadDemo(d)}>
