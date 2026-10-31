@@ -5,4 +5,6 @@ Gowtham: Agreed, that's the safer call.
 Ameya: Gowtham, please write the Mongo to Postgres export script by Thursday.
 Gowtham: Sure, Thursday.
 Priya: I'll point the cache layer at Postgres instead, by next Monday.
+Ameya: Also, someone should look at cache invalidation.
+Priya: I can look into it, no promises.
 Ameya: Good. And I'll update the billing architecture doc by Friday.

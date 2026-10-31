@@ -3,8 +3,17 @@
 import { useRef, useState } from "react";
 import { fmtDate, speak } from "@/lib/dates";
 
-type ActionItem = { task: string; owner: string; deadline: string | null; deadlineText?: string | null };
-type Decision = { text: string; madeBy?: string };
+type Evidence = { quote: string; speaker?: string };
+type ActionItem = {
+  task: string;
+  owner: string | null;
+  deadline: string | null;
+  deadlineText?: string | null;
+  ownership?: "accepted" | "assigned" | "unclear";
+  evidence?: Evidence;
+  evidenceVerified?: boolean;
+};
+type Decision = { text: string; madeBy?: string; topic?: string; evidence?: Evidence; evidenceVerified?: boolean };
 type PastDecision = { id: string; meeting: string; date: string; decision: string; rationale: string };
 type Conflict = { newDecision: string; conflictsWith: PastDecision; reasoning: string };
 type Phase = "input" | "review" | "done";
@@ -20,7 +29,12 @@ const DEMOS = [
 
 function readBack(items: ActionItem[], conflicts: Conflict[]) {
   const parts = [`I found ${items.length} action items.`];
-  items.forEach((a, i) => parts.push(`${i + 1}. ${a.owner}: ${a.task}, due ${fmtDate(a.deadline)}.`));
+  items.forEach((a, i) => {
+    const who = !a.owner ? "No owner" : a.ownership === "unclear" ? `${a.owner}, not confirmed` : a.owner;
+    parts.push(`${i + 1}. ${who}: ${a.task}, due ${fmtDate(a.deadline)}.`);
+  });
+  const open = items.flatMap((a, i) => (!a.owner || a.ownership === "unclear" ? [i + 1] : []));
+  if (open.length) parts.push(`Before I can create tasks, tell me who owns item ${open.join(" and ")}.`);
   conflicts.forEach((c) =>
     parts.push(
       `Warning. "${c.newDecision}" conflicts with a decision from ${c.conflictsWith.meeting} on ${fmtDate(c.conflictsWith.date)}: "${c.conflictsWith.decision}". ${c.reasoning}`,
@@ -28,6 +42,17 @@ function readBack(items: ActionItem[], conflicts: Conflict[]) {
   );
   parts.push("Say confirm to create these tasks, or tell me what to change.");
   return parts.join(" ");
+}
+
+/** The transcript line an item came from, or an honest note when it can't be verified. */
+function EvidenceLine({ e, verified }: { e?: Evidence; verified?: boolean }) {
+  if (!e?.quote) return <div className="evidence warn">no transcript evidence</div>;
+  return (
+    <div className={verified ? "evidence" : "evidence warn"}>
+      “{e.quote}”{e.speaker ? ` — ${e.speaker}` : ""}
+      {!verified && " (quote not found in transcript)"}
+    </div>
+  );
 }
 
 async function post<T>(url: string, body: unknown): Promise<T> {
@@ -113,14 +138,14 @@ export default function MeetingPage() {
     setError(null);
     setBusy("Understanding your response…");
     try {
-      const r = await post<{ intent: "confirm" | "edit" | "cancel"; actionItems: ActionItem[]; reply: string }>("/api/confirm", {
+      const r = await post<{ intent: "confirm" | "edit" | "cancel" | "blocked"; actionItems: ActionItem[]; reply: string }>("/api/confirm", {
         approvalId,
         utterance,
       });
       setUtterance("");
       setAssistant(r.reply);
       speak(r.reply);
-      if (r.intent === "edit") setItems(r.actionItems);
+      if (r.intent === "edit" || r.intent === "blocked") setItems(r.actionItems);
       if (r.intent === "cancel") reset();
       if (r.intent === "confirm") {
         setBusy(null);
@@ -217,7 +242,10 @@ export default function MeetingPage() {
             <h2>Decisions</h2>
             <ul>
               {decisions.map((d, i) => (
-                <li key={i}>{d.text}</li>
+                <li key={i}>
+                  {d.text}
+                  <EvidenceLine e={d.evidence} verified={d.evidenceVerified} />
+                </li>
               ))}
               {decisions.length === 0 && <li className="muted">None found</li>}
             </ul>
@@ -227,8 +255,14 @@ export default function MeetingPage() {
                 {items.map((a, i) => (
                   <tr key={i}>
                     <td className="num">{i + 1}</td>
-                    <td>{a.task}</td>
-                    <td>{a.owner}</td>
+                    <td>
+                      {a.task}
+                      <EvidenceLine e={a.evidence} verified={a.evidenceVerified} />
+                    </td>
+                    <td>
+                      {a.owner ?? "Unassigned"}
+                      {(!a.owner || a.ownership === "unclear") && <span className="pill overdue"> needs owner</span>}
+                    </td>
                     <td>{fmtDate(a.deadline)}</td>
                   </tr>
                 ))}

@@ -13,8 +13,8 @@ export async function createCard(item: ActionItem, meeting: string, ref: string)
     key: process.env.TRELLO_KEY!,
     token: process.env.TRELLO_TOKEN!,
     idList: process.env.TRELLO_LIST_ID!,
-    name: `${item.task} (${item.owner})`,
-    desc: `Owner: ${item.owner}\nSource: ${meeting}${item.deadlineText ? `\nSaid in meeting: "${item.deadlineText}"` : ""}\n${refMarker(ref)}`,
+    name: `${item.task} (${item.owner ?? "Unassigned"})`,
+    desc: `Owner: ${item.owner ?? "Unassigned"}\nSource: ${meeting}${item.deadlineText ? `\nSaid in meeting: "${item.deadlineText}"` : ""}\n${refMarker(ref)}`,
   });
   if (item.deadline) params.set("due", `${item.deadline}T17:00:00.000Z`);
 

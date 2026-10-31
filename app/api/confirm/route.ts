@@ -1,4 +1,4 @@
-import { interpretResponse } from "@/lib/confirm";
+import { interpretResponse, needsOwner } from "@/lib/confirm";
 import { getProposal, updateProposal, withLock } from "@/lib/proposals";
 
 /** Interprets the user's spoken response against the stored proposal. Approval is decided here, server-side. */
@@ -20,6 +20,13 @@ export async function POST(req: Request) {
         items = r.actionItems;
         await updateProposal(approvalId, { items, status: "pending", approvedAt: undefined, approvalUtterance: undefined });
       } else if (r.intent === "confirm") {
+        // Never turn an uncertain interpretation into a commitment: someone must settle each owner first.
+        const open = items.flatMap((a, i) => (needsOwner(a) ? [i + 1] : []));
+        if (open.length > 0) {
+          const list = open.length === 1 ? `Item ${open[0]} doesn't` : `Items ${open.join(" and ")} don't`;
+          const reply = `${list} have a confirmed owner yet. Tell me who owns ${open.length === 1 ? "it" : "them"}, or say remove ${open.length === 1 ? "that item" : "those items"}.`;
+          return Response.json({ intent: "blocked", reply, actionItems: items });
+        }
         await updateProposal(approvalId, { status: "approved", approvedAt: new Date().toISOString(), approvalUtterance: utterance });
       }
       // On confirm/cancel the stored items win over whatever list the model echoed back.

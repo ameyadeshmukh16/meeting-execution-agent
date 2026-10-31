@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { daysBetween, fmtDate, todayIso } from "@/lib/dates";
 
-type Item = { id: string; task: string; owner: string; deadline: string | null; meeting: string };
+type Item = { id: string; task: string; owner: string | null; deadline: string | null; meeting: string };
 
 /** Reminder rule (UI only, nothing is sent): notify 1 day before the deadline, again on the day, and daily once overdue. */
 function reminder(deadline: string, asOf: string) {
@@ -57,9 +57,9 @@ export default function DeadlinesPage() {
                     <span className={`pill ${t.r.cls}`}>{t.r.label}</span>
                   </td>
                   <td>{t.task}</td>
-                  <td>{t.owner}</td>
+                  <td>{t.owner ?? "Unassigned"}</td>
                   <td>{fmtDate(t.deadline)}</td>
-                  <td className="muted">🔔 {t.r.notify} {t.owner}</td>
+                  <td className="muted">🔔 {t.r.notify} {t.owner ?? "the team"}</td>
                 </tr>
               ))}
             </tbody>

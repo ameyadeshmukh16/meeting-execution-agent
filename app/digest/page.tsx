@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { fmtDate, speak } from "@/lib/dates";
 
-type Item = { id: string; task: string; owner: string; deadline: string | null; meeting: string; trelloUrl?: string };
+type Item = { id: string; task: string; owner: string | null; deadline: string | null; meeting: string; trelloUrl?: string };
 
 export default function DigestPage() {
   const [items, setItems] = useState<Item[] | null>(null);
@@ -15,10 +15,10 @@ export default function DigestPage() {
       .then((j) => setItems(j.items));
   }, []);
 
-  const people = useMemo(() => [...new Set((items ?? []).map((i) => i.owner))].sort(), [items]);
+  const people = useMemo(() => [...new Set((items ?? []).map((i) => i.owner ?? "Unassigned"))].sort(), [items]);
   const selected = person || people[0] || "";
   const mine = useMemo(
-    () => (items ?? []).filter((i) => i.owner === selected).sort((a, b) => (a.deadline ?? "9999").localeCompare(b.deadline ?? "9999")),
+    () => (items ?? []).filter((i) => (i.owner ?? "Unassigned") === selected).sort((a, b) => (a.deadline ?? "9999").localeCompare(b.deadline ?? "9999")),
     [items, selected],
   );
 
