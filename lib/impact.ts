@@ -43,7 +43,7 @@ export async function loadExistingTasks(): Promise<ExistingTask[]> {
     createHash("sha1").update(`${i.meeting}|${i.task}|${i.owner}`).digest("hex").slice(0, 8);
   const seen = new Set<string>();
   return (await loadItems())
-    .filter((i) => i.status !== "failed")
+    .filter((i) => i.status === undefined || i.status === "created")
     .map((i) => ({ id: stableId(i), task: i.task, owner: i.owner, deadline: i.deadline, meeting: i.meeting }))
     .filter((t) => !seen.has(t.id) && !!seen.add(t.id));
 }

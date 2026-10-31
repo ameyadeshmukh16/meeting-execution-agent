@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "eval": "node scripts/eval.mjs",
+    "test": "node --test scripts/test.mjs",
     "prime": "node scripts/prime.mjs"
   },
   "dependencies": {

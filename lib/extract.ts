@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { ActionItemSchema, EvidenceSchema, type ActionItem, type Evidence } from "./confirm";
+import { ActionItemSchema, EvidenceSchema, type ActionItem } from "./confirm";
+import { verifyEvidence, type EvidenceIssue } from "./evidence";
 import { completeJson } from "./llm";
 
 const DecisionSchema = z.object({
@@ -8,7 +9,7 @@ const DecisionSchema = z.object({
   topic: z.string().optional().catch(undefined),
   evidence: EvidenceSchema.optional().catch(undefined),
 });
-export type Decision = z.infer<typeof DecisionSchema> & { evidenceVerified?: boolean };
+export type Decision = z.infer<typeof DecisionSchema> & { evidenceVerified?: boolean; evidenceIssue?: EvidenceIssue };
 
 export const ExtractionSchema = z.object({
   decisions: z.array(DecisionSchema),
@@ -36,13 +37,10 @@ Rules:
 - Write each task as a short imperative title under 8 words (e.g. "Set up Mongo for billing", "Write invoice migration plan"). No owner name, no deadline, no filler.
 - Do not invent items. Output decisions as complete standalone sentences.`;
 
-const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-
-/** No-LLM grounding check: a quote counts as evidence only if it appears in the transcript. */
-function verify(transcript: string, evidence: Evidence | undefined): boolean {
-  if (!evidence?.quote) return false;
-  const q = normalize(evidence.quote);
-  return q.length >= 8 && normalize(transcript).includes(q);
+/** Adds the deterministic grounding result (quote present, said by the claimed speaker) to an item. */
+function ground<T extends { evidence?: { quote: string; speaker?: string } }>(transcript: string, item: T) {
+  const check = verifyEvidence(transcript, item.evidence);
+  return { ...item, evidenceVerified: check.ok, ...(check.ok ? {} : { evidenceIssue: check.issue }) };
 }
 
 export async function extract(transcript: string, meetingDate: string): Promise<Extraction> {
@@ -53,7 +51,7 @@ export async function extract(transcript: string, meetingDate: string): Promise<
     ExtractionSchema,
   );
   return {
-    decisions: raw.decisions.map((d) => ({ ...d, evidenceVerified: verify(transcript, d.evidence) })),
-    actionItems: raw.actionItems.map((a) => ({ ...a, evidenceVerified: verify(transcript, a.evidence) })),
+    decisions: raw.decisions.map((d) => ground(transcript, d)),
+    actionItems: raw.actionItems.map((a) => ground(transcript, a)),
   };
 }

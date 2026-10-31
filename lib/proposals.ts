@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ActionItem, Evidence } from "./confirm";
 import type { Resolution } from "./conflicts";
+import { dataPath } from "./paths";
 
 /**
  * A proposal is what the server will execute once approved. The client never sends the items to
@@ -18,13 +19,17 @@ export type Proposal = {
   /** Conflicts the user has to settle before approval. `resolutions` is keyed by the conflict's index. */
   conflicts: { newDecision: string; conflictsWithId: string }[];
   resolutions: Record<string, Resolution>;
+  /** Tasks the user explicitly accepted although their transcript evidence is missing or unverified. */
+  evidenceAccepted: { task: string; at: string }[];
+  /** Set when the user chose to proceed while a decision is left under review (needs clarification). */
+  acknowledgedReview?: { at: string; utterance?: string };
   status: "pending" | "approved" | "executed";
   createdAt: string;
   approvedAt?: string;
   approvalUtterance?: string;
 };
 
-const FILE = path.join(process.cwd(), "data", "proposals.json");
+const FILE = dataPath("proposals.json");
 
 async function load(): Promise<Proposal[]> {
   try {
@@ -42,7 +47,7 @@ async function save(all: Proposal[]) {
 export async function createProposal(
   data: Pick<Proposal, "meeting" | "meetingDate" | "items" | "decisions" | "conflicts">,
 ): Promise<Proposal> {
-  const proposal: Proposal = { ...data, resolutions: {}, approvalId: randomUUID(), status: "pending", createdAt: new Date().toISOString() };
+  const proposal: Proposal = { ...data, resolutions: {}, evidenceAccepted: [], approvalId: randomUUID(), status: "pending", createdAt: new Date().toISOString() };
   await save([...(await load()), proposal]);
   return proposal;
 }

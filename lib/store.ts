@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ActionItem } from "./confirm";
+import { dataPath } from "./paths";
 
 export type StoredItem = ActionItem & {
   id: string;
@@ -10,11 +11,11 @@ export type StoredItem = ActionItem & {
   /** `approvalId:index`, the idempotency key for this item. Absent on records from before approvals. */
   key?: string;
   /** Absent on older records, which were all created. */
-  status?: "created" | "failed";
+  status?: "created" | "failed" | "pending";
   error?: string;
 };
 
-const FILE = path.join(process.cwd(), "data", "items.json");
+const FILE = dataPath("items.json");
 
 export async function loadItems(): Promise<StoredItem[]> {
   try {

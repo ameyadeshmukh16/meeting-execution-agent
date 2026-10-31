@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { approvalBlockers } from "@/lib/gate";
 import { clearProposals, getProposal, updateProposal, withLock } from "@/lib/proposals";
 import { recordDecisions, resetLearnedDecisions } from "@/lib/conflicts";
 import { loadItems, saveItems, type StoredItem } from "@/lib/store";
@@ -7,14 +8,24 @@ import { archiveCard, createCard, hasRef, listCards, trelloConfigured } from "@/
 
 const BodySchema = z.object({ approvalId: z.string() });
 
-/** Tasks that exist (failed attempts are not tasks). Older records have no status and were all created. */
+/** Tasks that exist. Failed and still-pending attempts are not tasks. Older records have no status and were all created. */
 export async function GET() {
-  return Response.json({ items: (await loadItems()).filter((i) => i.status !== "failed") });
+  return Response.json({ items: (await loadItems()).filter((i) => i.status === undefined || i.status === "created") });
+}
+
+/** Insert or replace one record by its idempotency key, persisting immediately. */
+async function upsert(record: StoredItem) {
+  const all = await loadItems();
+  await saveItems([...all.filter((i) => i.key !== record.key), record]);
 }
 
 /**
  * Executes an approved proposal. Idempotent per item (`approvalId:index`): items already created are
  * never created again, so a double-click or a Retry only creates what is missing.
+ *
+ * Failure handling: an intent record is saved as "pending" BEFORE the Trello call. If an earlier attempt
+ * left a pending or failed record, its outcome is uncertain (the card may exist), so we look for the
+ * card's reference marker first, and if that lookup fails we create nothing.
  */
 export async function POST(req: Request) {
   const parsed = BodySchema.safeParse(await req.json());
@@ -25,13 +36,10 @@ export async function POST(req: Request) {
     const proposal = await getProposal(approvalId);
     if (!proposal) return Response.json({ error: "Unknown approvalId" }, { status: 404 });
     if (proposal.status === "pending") return Response.json({ error: "Not approved yet" }, { status: 403 });
-    // Defence in depth: approval should already require this, but never execute with an open conflict.
-    if (proposal.conflicts.some((_, i) => !proposal.resolutions[String(i)])) {
-      return Response.json({ error: "Unresolved conflicts" }, { status: 403 });
-    }
+    // Defence in depth: approval already requires this, but never execute with anything unresolved.
+    if (approvalBlockers(proposal).any) return Response.json({ error: "Approval requirements are not met" }, { status: 403 });
 
-    const all = await loadItems();
-    const previous = new Map(all.filter((i) => i.key?.startsWith(`${approvalId}:`)).map((i) => [i.key!, i]));
+    const previous = new Map((await loadItems()).filter((i) => i.key?.startsWith(`${approvalId}:`)).map((i) => [i.key!, i]));
     const { meeting, meetingDate } = proposal;
 
     let boardCards: Awaited<ReturnType<typeof listCards>> | null = null;
@@ -41,31 +49,37 @@ export async function POST(req: Request) {
     for (const [i, item] of proposal.items.entries()) {
       const key = `${approvalId}:${i}`;
       const prev = previous.get(key);
-      if (prev && prev.status !== "failed") {
+      if (prev && prev.status !== "failed" && prev.status !== "pending") {
         results.push(prev);
         continue;
       }
-      const stored: StoredItem = { ...item, id: prev?.id ?? randomUUID(), key, meeting, meetingDate, status: "created" };
+      const record: StoredItem = { ...item, id: prev?.id ?? randomUUID(), key, meeting, meetingDate, status: "created" };
+
       if (trelloConfigured()) {
         try {
-          // A previous attempt may have created the card but lost the response: look before creating.
+          // Save the intent first, so a crash after Trello creates the card still leaves a record to reconcile.
+          await upsert({ ...record, status: "pending" });
           let existing: { shortUrl: string } | undefined;
           if (prev) {
-            boardCards ??= await listCards().catch(() => []);
+            // A previous attempt's outcome is uncertain. If we cannot check, we must not create.
+            try {
+              boardCards ??= await listCards();
+            } catch {
+              throw new Error("Could not check Trello for an earlier attempt, so nothing was created. Retry in a moment.");
+            }
             existing = boardCards.find((c) => hasRef(c, key));
           }
-          stored.trelloUrl = existing ? existing.shortUrl : (await createCard(item, meeting, key)).url;
+          record.trelloUrl = existing ? existing.shortUrl : (await createCard(item, meeting, key)).url;
           if (!existing) createdNow++;
         } catch (e) {
-          stored.status = "failed";
-          stored.error = String(e).slice(0, 300);
+          record.status = "failed";
+          record.error = (e instanceof Error ? e.message : String(e)).slice(0, 300);
         }
       }
-      results.push(stored);
+      await upsert(record);
+      results.push(record);
     }
 
-    const keys = new Set(results.map((r) => r.key));
-    await saveItems([...all.filter((i) => !i.key || !keys.has(i.key)), ...results]);
     // Only an explicit "replace" retires an earlier decision; the other choices keep it in force.
     await recordDecisions(
       meeting,

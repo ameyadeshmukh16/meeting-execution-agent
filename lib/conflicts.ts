@@ -3,6 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { Evidence } from "./confirm";
 import { completeJson } from "./llm";
+import { dataPath } from "./paths";
 
 /** What the user decided to do about a conflict. Only "replace" retires the earlier decision. */
 export type Resolution = "replace" | "keep_both" | "needs_clarification";
@@ -24,8 +25,8 @@ export type PastDecision = {
   relatedTo?: string;
 };
 
-const SEED_FILE = path.join(process.cwd(), "data", "decisions.json");
-const LEARNED_FILE = path.join(process.cwd(), "data", "learned-decisions.json");
+const SEED_FILE = dataPath("decisions.json");
+const LEARNED_FILE = dataPath("learned-decisions.json");
 
 async function readJson<T>(file: string, fallback: T): Promise<T> {
   try {
@@ -105,10 +106,11 @@ export type RecordedDecision = {
 export async function recordDecisions(meeting: string, date: string, decisions: RecordedDecision[]) {
   // The seed already represents some meetings (e.g. the demo's Meeting 1); don't store them twice.
   const seed = await readJson<PastDecision[]>(SEED_FILE, []);
-  if (seed.some((d) => d.meeting === meeting)) return;
+  // A meeting is identified by title AND date: reusing a title on another date must still be recorded.
+  if (seed.some((d) => d.meeting === meeting && d.date === date)) return;
 
   const learned = await readJson<PastDecision[]>(LEARNED_FILE, []);
-  const seen = new Set(learned.filter((d) => d.meeting === meeting).map((d) => norm(d.decision)));
+  const seen = new Set(learned.filter((d) => d.meeting === meeting && d.date === date).map((d) => norm(d.decision)));
   let n = learned.length + 1;
   for (const d of decisions) {
     if (seen.has(norm(d.text))) continue;

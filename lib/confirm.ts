@@ -18,8 +18,9 @@ export const ActionItemSchema = z.object({
   deadlineText: z.string().nullable().optional(),
   ownership: Ownership.optional().catch(undefined),
   evidence: EvidenceSchema.optional().catch(undefined),
-  /** Set by the server: true only when the quote is found verbatim in the transcript. */
+  /** Set by the server: true only when the quote is in the transcript, said by the claimed speaker. */
   evidenceVerified: z.boolean().optional(),
+  evidenceIssue: z.enum(["missing", "not_found", "wrong_speaker"]).optional().catch(undefined),
 });
 export type ActionItem = z.infer<typeof ActionItemSchema>;
 
@@ -55,6 +56,7 @@ function carryOver(next: ActionItem[], prev: ActionItem[]): ActionItem[] {
       ...item,
       evidence: item.evidence ?? old.evidence,
       evidenceVerified: old.evidenceVerified,
+      evidenceIssue: old.evidenceIssue,
       ownership: ownerChanged ? "assigned" : (item.ownership ?? old.ownership),
     };
   });

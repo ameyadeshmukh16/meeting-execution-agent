@@ -3,7 +3,22 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 
+import { dataPath } from "./paths";
+
 const provider = () => process.env.LLM_PROVIDER ?? "openrouter";
+
+/** Which provider and model are active, and which cache file belongs to them. */
+export function llmIdentity() {
+  const p = provider();
+  const model =
+    p === "anthropic"
+      ? (process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5")
+      : p === "ollama"
+        ? (process.env.OLLAMA_MODEL ?? "qwen3:8b")
+        : (process.env.OPENROUTER_MODEL ?? "nvidia/nemotron-3.5-super-vl:free");
+  const slug = model.replace(/[^a-z0-9.]+/gi, "-").replace(/^-|-$/g, "");
+  return { provider: p, model, cacheFile: `llm-cache.${p}-${slug}.json` };
+}
 
 async function callOpenRouter(system: string, user: string): Promise<string> {
   const key = process.env.OPENROUTER_API_KEY;
@@ -12,7 +27,7 @@ async function callOpenRouter(system: string, user: string): Promise<string> {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: process.env.OPENROUTER_MODEL ?? "nvidia/nemotron-3.5-super-vl:free",
+      model: llmIdentity().model,
       temperature: 0,
       response_format: { type: "json_object" },
       messages: [
@@ -35,7 +50,7 @@ async function callAnthropic(system: string, user: string): Promise<string> {
     method: "POST",
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5",
+      model: llmIdentity().model,
       max_tokens: 4096,
       system,
       messages: [{ role: "user", content: user }],
@@ -57,11 +72,12 @@ function extractJson(text: string): unknown {
 // Replay cache for demo safety: every validated reply is stored by prompt hash. On an LLM failure
 // (rate limit, outage) a rehearsed step replays its saved reply. LLM_CACHE=prefer serves from the
 // cache first (fast, deterministic); LLM_CACHE=off disables it.
-const CACHE_FILE = path.join(process.cwd(), "data", "llm-cache.json");
+// One cache file per provider+model, so switching model can never replay another model's answer.
+const cacheFile = () => dataPath(llmIdentity().cacheFile);
 
 async function readCache(): Promise<Record<string, unknown>> {
   try {
-    return JSON.parse(await readFile(CACHE_FILE, "utf8"));
+    return JSON.parse(await readFile(cacheFile(), "utf8"));
   } catch {
     return {};
   }
@@ -70,9 +86,14 @@ async function readCache(): Promise<Record<string, unknown>> {
 async function writeCache(key: string, value: unknown) {
   const cache = await readCache();
   cache[key] = value;
-  await mkdir(path.dirname(CACHE_FILE), { recursive: true });
-  await writeFile(CACHE_FILE, JSON.stringify(cache, null, 1));
+  await mkdir(path.dirname(cacheFile()), { recursive: true });
+  await writeFile(cacheFile(), JSON.stringify(cache, null, 1));
 }
+
+const PROVIDERS: Record<string, (system: string, user: string) => Promise<string>> = {
+  openrouter: callOpenRouter,
+  anthropic: callAnthropic,
+};
 
 /** Call the configured LLM and validate its JSON reply against `schema`, retrying once on failure. */
 export async function completeJson<T>(system: string, user: string, schema: z.ZodType<T>): Promise<T> {
@@ -84,7 +105,9 @@ export async function completeJson<T>(system: string, user: string, schema: z.Zo
     if (hit !== undefined) return schema.parse(hit);
   }
 
-  const call = provider() === "anthropic" ? callAnthropic : callOpenRouter;
+  // No silent fall-through: an unknown LLM_PROVIDER is an error, not "use OpenRouter".
+  const call = PROVIDERS[provider()];
+  if (!call) throw new Error(`Unknown LLM_PROVIDER "${provider()}". Supported: ${Object.keys(PROVIDERS).join(", ")}`);
   let lastError: unknown;
   let prompt = user;
   for (let attempt = 0; attempt < 2; attempt++) {

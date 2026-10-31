@@ -12,8 +12,19 @@ type ActionItem = {
   ownership?: "accepted" | "assigned" | "unclear";
   evidence?: Evidence;
   evidenceVerified?: boolean;
+  evidenceIssue?: EvidenceIssue;
 };
-type Decision = { text: string; madeBy?: string; topic?: string; evidence?: Evidence; evidenceVerified?: boolean };
+type EvidenceIssue = "missing" | "not_found" | "wrong_speaker";
+type Decision = {
+  text: string;
+  madeBy?: string;
+  topic?: string;
+  evidence?: Evidence;
+  evidenceVerified?: boolean;
+  evidenceIssue?: EvidenceIssue;
+};
+type Accepted = { task: string; at: string };
+const normTask = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
 type PastDecision = { id: string; meeting: string; date: string; decision: string; rationale: string };
 type Conflict = {
   newDecision: string;
@@ -60,6 +71,10 @@ function readBack(items: ActionItem[], conflicts: Conflict[], impact: ImpactEntr
   });
   const open = items.flatMap((a, i) => (!a.owner || a.ownership === "unclear" ? [i + 1] : []));
   if (open.length) parts.push(`Before I can create tasks, tell me who owns item ${open.join(" and ")}.`);
+  const ungrounded = items.flatMap((a, i) => (a.evidenceVerified ? [] : [i + 1]));
+  if (ungrounded.length) {
+    parts.push(`Item ${ungrounded.join(" and ")} has no verified transcript evidence. Accept it anyway, or remove it.`);
+  }
   conflicts.forEach((c) =>
     parts.push(
       `Warning. "${c.newDecision}" conflicts with a decision from ${c.conflictsWith.meeting} on ${fmtDate(c.conflictsWith.date)}: "${c.conflictsWith.decision}". ${c.reasoning}`,
@@ -82,12 +97,18 @@ function readBack(items: ActionItem[], conflicts: Conflict[], impact: ImpactEntr
 }
 
 /** The transcript line an item came from, or an honest note when it can't be verified. */
-function EvidenceLine({ e, verified }: { e?: Evidence; verified?: boolean }) {
-  if (!e?.quote) return <div className="evidence warn">no transcript evidence</div>;
+const ISSUE_TEXT: Record<EvidenceIssue, string> = {
+  missing: "no transcript evidence",
+  not_found: "quote not found in the transcript",
+  wrong_speaker: "quote attributed to the wrong speaker",
+};
+
+function EvidenceLine({ e, verified, issue }: { e?: Evidence; verified?: boolean; issue?: EvidenceIssue }) {
+  if (!e?.quote) return <div className="evidence warn">{ISSUE_TEXT.missing}</div>;
   return (
     <div className={verified ? "evidence" : "evidence warn"}>
       “{e.quote}”{e.speaker ? ` — ${e.speaker}` : ""}
-      {!verified && " (quote not found in transcript)"}
+      {!verified && ` (${ISSUE_TEXT[issue ?? "not_found"]})`}
     </div>
   );
 }
@@ -149,6 +170,8 @@ export default function MeetingPage() {
   const [memoryNote, setMemoryNote] = useState("");
   const [result, setResult] = useState<ExecResult | null>(null);
   const [approvalId, setApprovalId] = useState("");
+  const [evidenceAccepted, setEvidenceAccepted] = useState<Accepted[]>([]);
+  const [ackReview, setAckReview] = useState(false);
   const replyRef = useRef<HTMLInputElement>(null);
 
   async function loadDemo(d: (typeof DEMOS)[number]) {
@@ -189,6 +212,8 @@ export default function MeetingPage() {
       setConflicts(conflicts);
       setImpact(impact);
       setResolutions({});
+      setEvidenceAccepted([]);
+      setAckReview(false);
       const spoken = readBack(ex.actionItems, conflicts, impact);
       setAssistant(spoken);
       setPhase("review");
@@ -202,21 +227,27 @@ export default function MeetingPage() {
   }
 
   /** Records an explicit choice for one conflict. Nothing defaults: the user decides. */
-  async function choose(index: number, resolution: Resolution) {
+  /** Sends one explicit human decision to the server and mirrors the server's state back. */
+  async function decide(body: Record<string, unknown>) {
     setError(null);
     try {
       const res = await fetch("/api/proposals", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ approvalId, index, resolution }),
+        body: JSON.stringify({ approvalId, ...body }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
       setResolutions(json.resolutions);
+      setEvidenceAccepted(json.evidenceAccepted ?? []);
+      setAckReview(!!json.acknowledgedReview);
     } catch (e) {
       setError(String(e));
     }
   }
+  const choose = (index: number, resolution: Resolution) => decide({ index, resolution });
+  const isAccepted = (a: ActionItem) => evidenceAccepted.some((x) => normTask(x.task) === normTask(a.task));
+  const underReview = Object.values(resolutions).includes("needs_clarification");
 
   /** Safe to call again: the server only creates items that don't exist yet. */
   async function executeTasks() {
@@ -242,11 +273,16 @@ export default function MeetingPage() {
         actionItems: ActionItem[];
         reply: string;
         resolutions?: Record<string, Resolution>;
+        evidenceAccepted?: Accepted[];
+        acknowledgedReview?: boolean;
       }>("/api/confirm", { approvalId, utterance });
       setUtterance("");
       setAssistant(r.reply);
       speak(r.reply);
       if (r.resolutions) setResolutions(r.resolutions);
+      if (r.evidenceAccepted) setEvidenceAccepted(r.evidenceAccepted);
+      if (r.acknowledgedReview !== undefined) setAckReview(r.acknowledgedReview);
+      if (r.intent === "resolved") setItems(r.actionItems);
       if (r.intent === "edit" || r.intent === "blocked") setItems(r.actionItems);
       if (r.intent === "cancel") reset();
       if (r.intent === "confirm") {
@@ -281,6 +317,8 @@ export default function MeetingPage() {
     setConflicts([]);
     setImpact([]);
     setResolutions({});
+    setEvidenceAccepted([]);
+    setAckReview(false);
     setAssistant("");
     setApprovalId("");
     setResult(null);
@@ -389,13 +427,29 @@ export default function MeetingPage() {
               </section>
             ))}
 
+          {underReview && (
+            <section className="card">
+              {ackReview ? (
+                <p className="muted">Proceeding while a decision stays under review (recorded).</p>
+              ) : (
+                <>
+                  <p>
+                    <strong>A decision is left under review.</strong> Tasks can still be created, but the decision stays
+                    unresolved and nothing here treats it as settled.
+                  </p>
+                  <button onClick={() => decide({ acknowledgeReview: true })}>Proceed anyway</button>
+                </>
+              )}
+            </section>
+          )}
+
           <section className="card">
             <h2>Decisions</h2>
             <ul>
               {decisions.map((d, i) => (
                 <li key={i}>
                   {d.text}
-                  <EvidenceLine e={d.evidence} verified={d.evidenceVerified} />
+                  <EvidenceLine e={d.evidence} verified={d.evidenceVerified} issue={d.evidenceIssue} />
                 </li>
               ))}
               {decisions.length === 0 && <li className="muted">None found</li>}
@@ -408,7 +462,15 @@ export default function MeetingPage() {
                     <td className="num">{i + 1}</td>
                     <td>
                       {a.task}
-                      <EvidenceLine e={a.evidence} verified={a.evidenceVerified} />
+                      <EvidenceLine e={a.evidence} verified={a.evidenceVerified} issue={a.evidenceIssue} />
+                      {!a.evidenceVerified &&
+                        (isAccepted(a) ? (
+                          <div className="evidence">accepted without verified evidence (recorded)</div>
+                        ) : (
+                          <button className="ghost small" onClick={() => decide({ acceptEvidence: i })}>
+                            Accept without evidence
+                          </button>
+                        ))}
                     </td>
                     <td>
                       {a.owner ?? "Unassigned"}
