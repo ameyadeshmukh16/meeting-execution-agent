@@ -15,7 +15,32 @@ type ActionItem = {
 };
 type Decision = { text: string; madeBy?: string; topic?: string; evidence?: Evidence; evidenceVerified?: boolean };
 type PastDecision = { id: string; meeting: string; date: string; decision: string; rationale: string };
-type Conflict = { newDecision: string; conflictsWith: PastDecision; reasoning: string };
+type Conflict = {
+  newDecision: string;
+  conflictsWith: PastDecision;
+  reasoning: string;
+  type?: "direct_contradiction" | "scope_conflict" | "dependency_conflict";
+  suggestedResolution?: string;
+};
+type Resolution = "replace" | "keep_both" | "needs_clarification";
+type ImpactTask = { id: string; task: string; owner: string | null; deadline: string | null; meeting?: string };
+type ImpactEntry = {
+  decision: string;
+  affectedTasks: ImpactTask[];
+  affectedSystems: string[];
+  potentialConsequences: string[];
+};
+
+const RESOLUTIONS: { value: Resolution; label: string; hint: string }[] = [
+  { value: "replace", label: "Replace earlier decision", hint: "The new decision supersedes the old one." },
+  { value: "keep_both", label: "Keep both", hint: "They apply to different scopes; both stay in force." },
+  { value: "needs_clarification", label: "Needs clarification", hint: "Keep the earlier decision; park the new one for review." },
+];
+const TYPE_LABEL = {
+  direct_contradiction: "Direct contradiction",
+  scope_conflict: "Scope conflict",
+  dependency_conflict: "Dependency conflict",
+};
 type Phase = "input" | "review" | "done";
 type ExecItem = ActionItem & { status?: "created" | "failed"; trelloUrl?: string; error?: string };
 type ExecResult = { trello: boolean; total: number; created: number; failed: number; items: ExecItem[] };
@@ -27,7 +52,7 @@ const DEMOS = [
 ];
 
 
-function readBack(items: ActionItem[], conflicts: Conflict[]) {
+function readBack(items: ActionItem[], conflicts: Conflict[], impact: ImpactEntry[]) {
   const parts = [`I found ${items.length} action items.`];
   items.forEach((a, i) => {
     const who = !a.owner ? "No owner" : a.ownership === "unclear" ? `${a.owner}, not confirmed` : a.owner;
@@ -40,6 +65,18 @@ function readBack(items: ActionItem[], conflicts: Conflict[]) {
       `Warning. "${c.newDecision}" conflicts with a decision from ${c.conflictsWith.meeting} on ${fmtDate(c.conflictsWith.date)}: "${c.conflictsWith.decision}". ${c.reasoning}`,
     ),
   );
+  impact.forEach((im) => {
+    if (im.affectedTasks.length) {
+      parts.push(
+        `"${im.decision}" may affect existing tasks: ${im.affectedTasks.map((t) => `${t.owner ?? "unassigned"}'s ${t.task}`).join(", ")}.`,
+      );
+    }
+  });
+  if (conflicts.length) {
+    parts.push(
+      `For ${conflicts.length === 1 ? "the conflict" : "each conflict"}, say replace the earlier decision, keep both, or needs clarification.`,
+    );
+  }
   parts.push("Say confirm to create these tasks, or tell me what to change.");
   return parts.join(" ");
 }
@@ -51,6 +88,37 @@ function EvidenceLine({ e, verified }: { e?: Evidence; verified?: boolean }) {
     <div className={verified ? "evidence" : "evidence warn"}>
       “{e.quote}”{e.speaker ? ` — ${e.speaker}` : ""}
       {!verified && " (quote not found in transcript)"}
+    </div>
+  );
+}
+
+/** What a decision may affect among existing tasks. Always worded as possibilities. */
+function ImpactBlock({ entry }: { entry?: ImpactEntry }) {
+  if (!entry) return null;
+  return (
+    <div className="impact">
+      <strong>Potential impact</strong>
+      {entry.affectedSystems.length > 0 && <span className="muted"> · {entry.affectedSystems.join(", ")}</span>}
+      {entry.potentialConsequences.length > 0 && (
+        <ul>
+          {entry.potentialConsequences.map((c, i) => (
+            <li key={i}>{c}</li>
+          ))}
+        </ul>
+      )}
+      {entry.affectedTasks.length > 0 && (
+        <>
+          <div className="muted">Existing tasks that may need review (created earlier, not tracked as done):</div>
+          <ul>
+            {entry.affectedTasks.map((t) => (
+              <li key={t.id}>
+                {t.task} — {t.owner ?? "Unassigned"}, {fmtDate(t.deadline)}
+                {t.meeting ? ` · ${t.meeting}` : ""}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }
@@ -70,6 +138,8 @@ export default function MeetingPage() {
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [items, setItems] = useState<ActionItem[]>([]);
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
+  const [impact, setImpact] = useState<ImpactEntry[]>([]);
+  const [resolutions, setResolutions] = useState<Record<string, Resolution>>({});
   const [utterance, setUtterance] = useState("");
   const [assistant, setAssistant] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -91,31 +161,53 @@ export default function MeetingPage() {
     try {
       setBusy("Extracting decisions and action items…");
       const ex = await post<{ decisions: Decision[]; actionItems: ActionItem[] }>("/api/extract", { transcript, meetingDate });
-      setBusy("Checking against past decisions…");
-      const { conflicts } = await post<{ conflicts: Conflict[] }>("/api/conflicts", { decisions: ex.decisions.map((d) => d.text) });
+      setBusy("Checking conflicts and impact…");
+      const texts = ex.decisions.map((d) => d.text);
+      // Conflict detection and impact assessment are independent questions; ask them together.
+      const [{ conflicts }, { impact }] = await Promise.all([
+        post<{ conflicts: Conflict[] }>("/api/conflicts", { decisions: texts }),
+        post<{ impact: ImpactEntry[] }>("/api/impact", { decisions: texts }),
+      ]);
       // The server keeps what is being reviewed; only its id comes back to the client.
       const proposal = await post<{ approvalId: string }>("/api/proposals", {
         meeting: meetingName,
         meetingDate,
         actionItems: ex.actionItems,
-        // Confirming a conflicting decision replaces the earlier one in the store.
-        decisions: ex.decisions.map((d) => ({
-          text: d.text,
-          supersedes: conflicts.find((c) => c.newDecision === d.text)?.conflictsWith.id,
-        })),
+        decisions: ex.decisions.map((d) => ({ text: d.text, topic: d.topic, evidence: d.evidence })),
+        conflicts: conflicts.map((c) => ({ newDecision: c.newDecision, conflictsWithId: c.conflictsWith.id })),
       });
       setApprovalId(proposal.approvalId);
       setDecisions(ex.decisions);
       setItems(ex.actionItems);
       setConflicts(conflicts);
-      setAssistant(readBack(ex.actionItems, conflicts));
+      setImpact(impact);
+      setResolutions({});
+      const spoken = readBack(ex.actionItems, conflicts, impact);
+      setAssistant(spoken);
       setPhase("review");
-      speak(readBack(ex.actionItems, conflicts));
+      speak(spoken);
       setTimeout(() => replyRef.current?.focus(), 100);
     } catch (e) {
       setError(String(e));
     } finally {
       setBusy(null);
+    }
+  }
+
+  /** Records an explicit choice for one conflict. Nothing defaults: the user decides. */
+  async function choose(index: number, resolution: Resolution) {
+    setError(null);
+    try {
+      const res = await fetch("/api/proposals", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approvalId, index, resolution }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
+      setResolutions(json.resolutions);
+    } catch (e) {
+      setError(String(e));
     }
   }
 
@@ -138,13 +230,16 @@ export default function MeetingPage() {
     setError(null);
     setBusy("Understanding your response…");
     try {
-      const r = await post<{ intent: "confirm" | "edit" | "cancel" | "blocked"; actionItems: ActionItem[]; reply: string }>("/api/confirm", {
-        approvalId,
-        utterance,
-      });
+      const r = await post<{
+        intent: "confirm" | "edit" | "cancel" | "blocked" | "resolved";
+        actionItems: ActionItem[];
+        reply: string;
+        resolutions?: Record<string, Resolution>;
+      }>("/api/confirm", { approvalId, utterance });
       setUtterance("");
       setAssistant(r.reply);
       speak(r.reply);
+      if (r.resolutions) setResolutions(r.resolutions);
       if (r.intent === "edit" || r.intent === "blocked") setItems(r.actionItems);
       if (r.intent === "cancel") reset();
       if (r.intent === "confirm") {
@@ -168,6 +263,8 @@ export default function MeetingPage() {
     setDecisions([]);
     setItems([]);
     setConflicts([]);
+    setImpact([]);
+    setResolutions({});
     setAssistant("");
     setApprovalId("");
     setResult(null);
@@ -218,7 +315,9 @@ export default function MeetingPage() {
         <>
           {conflicts.map((c, i) => (
             <section key={i} className="conflict">
-              <div className="badge">⚠ Conflict with an earlier decision</div>
+              <div className="badge">
+                ⚠ Conflict with an earlier decision{c.type ? ` · ${TYPE_LABEL[c.type]}` : ""}
+              </div>
               <div className="versus">
                 <div>
                   <small>
@@ -235,8 +334,37 @@ export default function MeetingPage() {
               <p className="why">
                 <strong>Why this matters:</strong> {c.reasoning}
               </p>
+              <ImpactBlock entry={impact.find((m) => m.decision === c.newDecision)} />
+              {c.suggestedResolution && (
+                <p className="why">
+                  <strong>Suggested next step:</strong> {c.suggestedResolution}
+                </p>
+              )}
+              <div className="choices">
+                {RESOLUTIONS.map((r) => (
+                  <button
+                    key={r.value}
+                    className={resolutions[String(i)] === r.value ? "" : "ghost"}
+                    title={r.hint}
+                    onClick={() => choose(i, r.value)}
+                  >
+                    {resolutions[String(i)] === r.value ? "✓ " : ""}
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+              {!resolutions[String(i)] && <p className="muted">Choose how to handle this before the tasks can be created.</p>}
             </section>
           ))}
+
+          {impact
+            .filter((m) => !conflicts.some((c) => c.newDecision === m.decision))
+            .map((m) => (
+              <section key={m.decision} className="card">
+                <h2>Potential impact of: {m.decision}</h2>
+                <ImpactBlock entry={m} />
+              </section>
+            ))}
 
           <section className="card">
             <h2>Decisions</h2>

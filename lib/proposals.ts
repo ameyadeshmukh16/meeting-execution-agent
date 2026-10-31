@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { ActionItem } from "./confirm";
+import type { ActionItem, Evidence } from "./confirm";
+import type { Resolution } from "./conflicts";
 
 /**
  * A proposal is what the server will execute once approved. The client never sends the items to
@@ -13,7 +14,10 @@ export type Proposal = {
   meeting: string;
   meetingDate: string;
   items: ActionItem[];
-  decisions: { text: string; supersedes?: string }[];
+  decisions: { text: string; topic?: string; evidence?: Evidence }[];
+  /** Conflicts the user has to settle before approval. `resolutions` is keyed by the conflict's index. */
+  conflicts: { newDecision: string; conflictsWithId: string }[];
+  resolutions: Record<string, Resolution>;
   status: "pending" | "approved" | "executed";
   createdAt: string;
   approvedAt?: string;
@@ -36,9 +40,9 @@ async function save(all: Proposal[]) {
 }
 
 export async function createProposal(
-  data: Pick<Proposal, "meeting" | "meetingDate" | "items" | "decisions">,
+  data: Pick<Proposal, "meeting" | "meetingDate" | "items" | "decisions" | "conflicts">,
 ): Promise<Proposal> {
-  const proposal: Proposal = { ...data, approvalId: randomUUID(), status: "pending", createdAt: new Date().toISOString() };
+  const proposal: Proposal = { ...data, resolutions: {}, approvalId: randomUUID(), status: "pending", createdAt: new Date().toISOString() };
   await save([...(await load()), proposal]);
   return proposal;
 }

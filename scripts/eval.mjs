@@ -115,7 +115,11 @@ if (health.cache !== "off" && !allowCache) {
   process.exit(1);
 }
 
-const scenarios = JSON.parse(fs.readFileSync(new URL("../eval/scenarios.json", import.meta.url), "utf8"));
+// `--only I1,I2` runs a subset (saves free-tier quota while iterating). Don't use it for a reported run.
+const only = args.includes("--only") ? args[args.indexOf("--only") + 1].split(",") : null;
+const scenarios = JSON.parse(fs.readFileSync(new URL("../eval/scenarios.json", import.meta.url), "utf8")).filter(
+  (s) => !only || only.includes(s.id),
+);
 const rows = [];
 const total = { owner: [0, 0], deadline: [0, 0], tp: 0, fp: 0, fn: 0 };
 

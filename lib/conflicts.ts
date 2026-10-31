@@ -1,7 +1,11 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import type { Evidence } from "./confirm";
 import { completeJson } from "./llm";
+
+/** What the user decided to do about a conflict. Only "replace" retires the earlier decision. */
+export type Resolution = "replace" | "keep_both" | "needs_clarification";
 
 export type PastDecision = {
   id: string;
@@ -9,8 +13,15 @@ export type PastDecision = {
   date: string;
   decision: string;
   rationale: string;
-  /** Id of an earlier decision this one replaced (set when a conflict was confirmed anyway). */
+  topic?: string;
+  evidence?: Evidence;
+  /** Id of an earlier decision this one replaced (only set by an explicit "replace"). */
   supersedes?: string;
+  /** Absent means active. "under_review" decisions are kept but not enforced until someone clarifies. */
+  status?: "active" | "under_review";
+  resolution?: Resolution;
+  /** The decision this one was in conflict with, when it was kept alongside or left for review. */
+  relatedTo?: string;
 };
 
 const SEED_FILE = path.join(process.cwd(), "data", "decisions.json");
@@ -24,21 +35,25 @@ async function readJson<T>(file: string, fallback: T): Promise<T> {
   }
 }
 
-/** Seed decisions plus any learned from confirmed meetings, minus ones a later decision replaced. */
+/** Decisions currently in force: seed + learned, minus replaced ones and ones still under review. */
 export async function loadPastDecisions(): Promise<PastDecision[]> {
   const all = [...(await readJson<PastDecision[]>(SEED_FILE, [])), ...(await readJson<PastDecision[]>(LEARNED_FILE, []))];
   const replaced = new Set(all.flatMap((d) => (d.supersedes ? [d.supersedes] : [])));
-  return all.filter((d) => !replaced.has(d.id));
+  return all.filter((d) => !replaced.has(d.id) && d.status !== "under_review");
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
+export type RecordedDecision = {
+  text: string;
+  topic?: string;
+  evidence?: Evidence;
+  resolution?: Resolution;
+  conflictsWithId?: string;
+};
+
 /** Persist decisions from a confirmed meeting. Skips ones already stored for the same meeting. */
-export async function recordDecisions(
-  meeting: string,
-  date: string,
-  decisions: { text: string; supersedes?: string }[],
-) {
+export async function recordDecisions(meeting: string, date: string, decisions: RecordedDecision[]) {
   // The seed already represents some meetings (e.g. the demo's Meeting 1); don't store them twice.
   const seed = await readJson<PastDecision[]>(SEED_FILE, []);
   if (seed.some((d) => d.meeting === meeting)) return;
@@ -48,13 +63,20 @@ export async function recordDecisions(
   let n = learned.length + 1;
   for (const d of decisions) {
     if (seen.has(norm(d.text))) continue;
+    const inConflict = !!d.conflictsWithId;
+    // A conflict with no recorded choice is never treated as approval to replace: park it for review.
+    const resolution = inConflict ? (d.resolution ?? "needs_clarification") : undefined;
     learned.push({
       id: `L${n++}`,
       meeting,
       date,
       decision: d.text,
       rationale: `Decided in ${meeting}.`,
-      ...(d.supersedes ? { supersedes: d.supersedes } : {}),
+      ...(d.topic ? { topic: d.topic } : {}),
+      ...(d.evidence ? { evidence: d.evidence } : {}),
+      ...(resolution === "replace" ? { supersedes: d.conflictsWithId } : {}),
+      ...(resolution === "needs_clarification" ? { status: "under_review" as const } : {}),
+      ...(resolution ? { resolution, relatedTo: d.conflictsWithId } : {}),
     });
   }
   await mkdir(path.dirname(LEARNED_FILE), { recursive: true });
@@ -65,12 +87,16 @@ export async function resetLearnedDecisions() {
   await rm(LEARNED_FILE, { force: true });
 }
 
+export const ConflictType = z.enum(["direct_contradiction", "scope_conflict", "dependency_conflict"]);
+
 const ModelSchema = z.object({
   conflicts: z.array(
     z.object({
       newDecision: z.string(),
       conflictsWithId: z.string(),
       reasoning: z.string(),
+      type: ConflictType.optional().catch(undefined),
+      suggestedResolution: z.string().optional().catch(undefined),
     }),
   ),
 });
@@ -79,15 +105,19 @@ export type Conflict = {
   newDecision: string;
   conflictsWith: PastDecision;
   reasoning: string;
+  type?: z.infer<typeof ConflictType>;
+  suggestedResolution?: string;
 };
 
 const SYSTEM = `You check new team decisions against a store of past decisions and report genuine contradictions.
-Reply with ONLY a JSON object: {"conflicts":[{"newDecision":string,"conflictsWithId":string,"reasoning":string}]}
+Reply with ONLY a JSON object: {"conflicts":[{"newDecision":string,"conflictsWithId":string,"type":"direct_contradiction"|"scope_conflict"|"dependency_conflict","reasoning":string,"suggestedResolution":string}]}
 
 Rules:
-- Report a conflict only when following the new decision would mean breaking or reversing a past decision. Decisions on different topics are NOT conflicts, even if they share words.
+- Report a conflict only when following the new decision would mean breaking or reversing a past decision. Decisions on different topics, systems or projects are NOT conflicts, even if they share a technology or words.
+- type: "direct_contradiction" = the new decision reverses or negates the old one; "scope_conflict" = it overlaps the old decision's scope in a way that needs the scope clarified; "dependency_conflict" = it would break something the old decision depends on.
 - newDecision must be copied verbatim from the provided new decisions. conflictsWithId must be an id from the past decisions.
 - reasoning is 1-2 sentences, plain language, naming the specific clash and why it matters (use the past decision's rationale where relevant). Do not mention ids in the reasoning.
+- suggestedResolution is one short sentence on what to do next (e.g. "Confirm with the architecture owner before replacing the Postgres decision"). It is advice, not a decision.
 - The past decisions listed are the ones currently in force; earlier ones that were replaced are already removed. Check the new decisions against these only.
 - If nothing conflicts, return {"conflicts":[]}.`;
 
@@ -107,6 +137,14 @@ export async function detectConflicts(newDecisions: string[], pastOverride?: Pas
   return result.conflicts.flatMap((c) => {
     const target = byId.get(c.conflictsWithId);
     if (!target || !newDecisions.includes(c.newDecision)) return [];
-    return [{ newDecision: c.newDecision, conflictsWith: target, reasoning: c.reasoning }];
+    return [
+      {
+        newDecision: c.newDecision,
+        conflictsWith: target,
+        reasoning: c.reasoning,
+        type: c.type,
+        suggestedResolution: c.suggestedResolution,
+      },
+    ];
   });
 }

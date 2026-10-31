@@ -25,6 +25,10 @@ export async function POST(req: Request) {
     const proposal = await getProposal(approvalId);
     if (!proposal) return Response.json({ error: "Unknown approvalId" }, { status: 404 });
     if (proposal.status === "pending") return Response.json({ error: "Not approved yet" }, { status: 403 });
+    // Defence in depth: approval should already require this, but never execute with an open conflict.
+    if (proposal.conflicts.some((_, i) => !proposal.resolutions[String(i)])) {
+      return Response.json({ error: "Unresolved conflicts" }, { status: 403 });
+    }
 
     const all = await loadItems();
     const previous = new Map(all.filter((i) => i.key?.startsWith(`${approvalId}:`)).map((i) => [i.key!, i]));
@@ -62,7 +66,19 @@ export async function POST(req: Request) {
 
     const keys = new Set(results.map((r) => r.key));
     await saveItems([...all.filter((i) => !i.key || !keys.has(i.key)), ...results]);
-    await recordDecisions(meeting, meetingDate, proposal.decisions);
+    // Only an explicit "replace" retires an earlier decision; the other choices keep it in force.
+    await recordDecisions(
+      meeting,
+      meetingDate,
+      proposal.decisions.map((d) => {
+        const ci = proposal.conflicts.findIndex((c) => c.newDecision === d.text);
+        return {
+          ...d,
+          conflictsWithId: ci >= 0 ? proposal.conflicts[ci].conflictsWithId : undefined,
+          resolution: ci >= 0 ? proposal.resolutions[String(ci)] : undefined,
+        };
+      }),
+    );
 
     const failed = results.filter((r) => r.status === "failed").length;
     if (failed === 0) await updateProposal(approvalId, { status: "executed" });
