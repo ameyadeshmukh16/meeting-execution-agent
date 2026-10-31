@@ -1,0 +1,130 @@
+[
+  {
+    "id": "E1", "kind": "extract", "heldout": false,
+    "title": "Self-correction keeps only the final choice",
+    "meetingDate": "2026-10-27",
+    "transcript": "Ameya: For the session store let's use Redis... actually no, let's go with Memcached instead.\nPriya: Works for me.",
+    "expect": { "decisionsMatch": ["memcached"], "decisionsAbsent": ["redis"] }
+  },
+  {
+    "id": "E2", "kind": "extract", "heldout": false,
+    "title": "Relative dates resolve against the meeting date (Tuesday 2026-10-27)",
+    "meetingDate": "2026-10-27",
+    "transcript": "Ameya: Gowtham, can you ship the auth fix by Wednesday?\nGowtham: Yes, Wednesday works.\nPriya: I'll finish the quarterly report by next Monday.",
+    "expect": { "items": [
+      { "task": "auth", "owner": "Gowtham", "deadline": "2026-10-28" },
+      { "task": "report", "owner": "Priya", "deadline": "2026-11-02" }
+    ] }
+  },
+  {
+    "id": "E3", "kind": "extract", "heldout": false,
+    "title": "Explicit acceptance gets an owner",
+    "meetingDate": "2026-10-27",
+    "transcript": "Ameya: Can someone own the load test?\nGowtham: I'll take it, I'll have it done by Thursday.",
+    "expect": { "items": [ { "task": "load", "owner": "Gowtham", "deadline": "2026-10-29" } ] }
+  },
+  {
+    "id": "E4", "kind": "extract", "heldout": false,
+    "title": "Unassigned work does not get an invented owner",
+    "meetingDate": "2026-10-27",
+    "transcript": "Ameya: We really need to rotate the API keys at some point.\nPriya: Yeah, agreed.\nGowtham: Definitely.",
+    "expect": { "noAcceptedOwner": "rotate|api key|keys" }
+  },
+  {
+    "id": "E5", "kind": "extract", "heldout": false,
+    "title": "Ambiguous deadline stays unresolved",
+    "meetingDate": "2026-10-27",
+    "transcript": "Ameya: Priya, can you update the runbook soon?\nPriya: Sure, I'll get to it sometime this month.",
+    "expect": { "items": [ { "task": "runbook", "owner": "Priya", "deadline": null } ] }
+  },
+  {
+    "id": "E6", "kind": "extract", "heldout": true,
+    "title": "Investigation-only is not acceptance of ownership",
+    "meetingDate": "2026-10-27",
+    "transcript": "Ameya: Does anyone know why the nightly job has been so slow?\nGowtham: I can look into it, no promises.",
+    "expect": { "noAcceptedOwner": "nightly|job|slow" }
+  },
+  {
+    "id": "E7", "kind": "extract", "heldout": true,
+    "title": "Open discussion is not a decision",
+    "meetingDate": "2026-10-27",
+    "transcript": "Priya: Should we move everything to Kubernetes?\nGowtham: Maybe next year, I'm not sure.\nAmeya: Let's not decide that now.",
+    "expect": { "decisionsAbsent": ["kubernetes"] }
+  },
+  {
+    "id": "C1", "kind": "conflict", "heldout": false,
+    "title": "Direct reversal is a conflict",
+    "pastDecisions": [
+      { "id": "d1", "decision": "Billing transactions are stored in PostgreSQL.", "rationale": "ACID guarantees for money movement." }
+    ],
+    "newDecisions": ["Move billing transactions to MongoDB."],
+    "expect": { "conflictIds": ["d1"] }
+  },
+  {
+    "id": "C2", "kind": "conflict", "heldout": false,
+    "title": "Same technology on a different system is not a conflict",
+    "pastDecisions": [
+      { "id": "d1", "decision": "The billing service uses PostgreSQL.", "rationale": "Team expertise." }
+    ],
+    "newDecisions": ["The audit-log service will also use PostgreSQL."],
+    "expect": { "conflictIds": [] }
+  },
+  {
+    "id": "C3", "kind": "conflict", "heldout": true,
+    "title": "Same technology question on a different project is not a conflict",
+    "pastDecisions": [
+      { "id": "d1", "decision": "Project Atlas will be deployed on Kubernetes.", "rationale": "Needs autoscaling." }
+    ],
+    "newDecisions": ["Project Beacon will be deployed on plain VMs, not Kubernetes."],
+    "expect": { "conflictIds": [] }
+  },
+  {
+    "id": "C4", "kind": "conflict", "heldout": false,
+    "title": "Compatible decision is not a conflict",
+    "pastDecisions": [
+      { "id": "d1", "decision": "Public APIs use REST with OpenAPI specs.", "rationale": "Simple client integration." }
+    ],
+    "newDecisions": ["Add rate limiting to the public REST APIs."],
+    "expect": { "conflictIds": [] }
+  },
+  {
+    "id": "C5", "kind": "conflict", "heldout": false,
+    "title": "A reversal conflicts with the CURRENT decision (replaced one already removed)",
+    "pastDecisions": [
+      { "id": "L1", "decision": "Use Mongo for billing.", "rationale": "Decided in Sprint Planning 14." },
+      { "id": "d2", "decision": "Public APIs use REST with OpenAPI specs.", "rationale": "Simple client integration." }
+    ],
+    "newDecisions": ["Move billing back to Postgres."],
+    "expect": { "conflictIds": ["L1"] }
+  },
+  {
+    "id": "C6", "kind": "conflict", "heldout": true,
+    "title": "Mixed batch: only the contradicting decision is flagged",
+    "pastDecisions": [
+      { "id": "d1", "decision": "Standardize on Postgres as the primary database for all new services.", "rationale": "One system to operate." },
+      { "id": "d2", "decision": "Public APIs use REST with OpenAPI specs.", "rationale": "Simple client integration." }
+    ],
+    "newDecisions": ["Switch the new reporting service to MongoDB.", "Add a health-check endpoint to every service."],
+    "expect": { "conflictIds": ["d1"] }
+  },
+  {
+    "id": "I1", "kind": "impact", "needs": "impact", "heldout": false,
+    "title": "Decision affects an existing task that mentions the old technology",
+    "tasks": [
+      { "id": "t1", "task": "Set up the Postgres schema for billing", "owner": "Gowtham" },
+      { "id": "t2", "task": "Update the onboarding docs", "owner": "Priya" }
+    ],
+    "newDecisions": ["Move billing to MongoDB."],
+    "expect": { "affected": ["t1"], "notAffected": ["t2"] }
+  },
+  {
+    "id": "I2", "kind": "impact", "needs": "impact", "heldout": false,
+    "title": "Impact is grounded: only genuinely related tasks, none invented",
+    "tasks": [
+      { "id": "t1", "task": "Write unit tests for the login page", "owner": "Priya" },
+      { "id": "t2", "task": "Provision the Redis cluster for the session cache", "owner": "Gowtham" }
+    ],
+    "newDecisions": ["Replace Redis with Memcached for caching."],
+    "expect": { "affected": ["t2"], "notAffected": ["t1"] }
+  }
+]

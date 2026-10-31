@@ -91,9 +91,10 @@ Rules:
 - The past decisions listed are the ones currently in force; earlier ones that were replaced are already removed. Check the new decisions against these only.
 - If nothing conflicts, return {"conflicts":[]}.`;
 
-export async function detectConflicts(newDecisions: string[]): Promise<Conflict[]> {
+/** `pastOverride` lets the evaluation harness supply a controlled memory instead of the stored one. */
+export async function detectConflicts(newDecisions: string[], pastOverride?: PastDecision[]): Promise<Conflict[]> {
   if (newDecisions.length === 0) return [];
-  const past = await loadPastDecisions();
+  const past = pastOverride ?? (await loadPastDecisions());
   const byId = new Map(past.map((d) => [d.id, d]));
 
   const result = await completeJson(
