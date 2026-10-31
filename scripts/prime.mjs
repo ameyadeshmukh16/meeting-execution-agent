@@ -60,5 +60,9 @@ for (const m of MEETINGS) {
   console.log(` created ${done.created}/${done.total}${done.failed ? `, ${done.failed} FAILED` : ""}`);
 }
 
-const cleaned = await call("DELETE", "/api/tasks?archive=1");
-console.log(`\nDone. Archived ${cleaned.archived} Trello card(s) and reset memory; replay cache is primed.`);
+if (process.env.PRIME_KEEP === "1") {
+  console.log("\nDone. PRIME_KEEP=1: left the demo state and Trello cards in place (use Reset demo memory to clear).");
+} else {
+  const cleaned = await call("DELETE", "/api/tasks?archive=1");
+  console.log(`\nDone. Archived ${cleaned.archived} Trello card(s) and reset memory; replay cache is primed.`);
+}

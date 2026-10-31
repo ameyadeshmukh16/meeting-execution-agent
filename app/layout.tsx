@@ -25,6 +25,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <nav>
           <strong>Meeting → Execution</strong>
           <Link href="/">Meeting</Link>
+          <Link href="/decisions">Decisions</Link>
           <Link href="/digest">Digest</Link>
           <Link href="/deadlines">Deadlines</Link>
         </nav>

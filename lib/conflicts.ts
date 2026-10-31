@@ -42,6 +42,55 @@ export async function loadPastDecisions(): Promise<PastDecision[]> {
   return all.filter((d) => !replaced.has(d.id) && d.status !== "under_review");
 }
 
+export type DecisionView = PastDecision & {
+  source: "seed" | "learned";
+  state: "active" | "replaced" | "under_review";
+  /** Id of the decision that replaced this one. */
+  replacedBy?: string;
+};
+
+export type MeetingChange = {
+  meeting: string;
+  date: string;
+  items: { id: string; decision: string; kind: "new" | "replaced" | "kept_both" | "needs_clarification"; relatedDecision?: string }[];
+};
+
+/** Full history for the registry page: every decision, including replaced and under-review ones. */
+export async function loadDecisionHistory(): Promise<{ decisions: DecisionView[]; lastMeeting: MeetingChange | null }> {
+  const seed = (await readJson<PastDecision[]>(SEED_FILE, [])).map((d) => ({ ...d, source: "seed" as const }));
+  const learned = (await readJson<PastDecision[]>(LEARNED_FILE, [])).map((d) => ({ ...d, source: "learned" as const }));
+  const all = [...seed, ...learned];
+
+  const replacedBy = new Map(all.flatMap((d) => (d.supersedes ? [[d.supersedes, d.id] as const] : [])));
+  const decisions: DecisionView[] = all
+    .map((d) => ({
+      ...d,
+      replacedBy: replacedBy.get(d.id),
+      state: replacedBy.has(d.id) ? ("replaced" as const) : d.status === "under_review" ? ("under_review" as const) : ("active" as const),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  // "What changed in the last meeting": the most recent learned meeting and what each decision did.
+  let lastMeeting: MeetingChange | null = null;
+  if (learned.length) {
+    const latest = learned.reduce((m, d) => (d.date >= m.date ? d : m));
+    const text = new Map(all.map((d) => [d.id, d.decision]));
+    lastMeeting = {
+      meeting: latest.meeting,
+      date: latest.date,
+      items: learned
+        .filter((d) => d.meeting === latest.meeting)
+        .map((d) => ({
+          id: d.id,
+          decision: d.decision,
+          kind: d.resolution === "replace" ? "replaced" : d.resolution === "keep_both" ? "kept_both" : d.resolution === "needs_clarification" ? "needs_clarification" : "new",
+          relatedDecision: d.relatedTo ? text.get(d.relatedTo) : undefined,
+        })),
+    };
+  }
+  return { decisions, lastMeeting };
+}
+
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 export type RecordedDecision = {
