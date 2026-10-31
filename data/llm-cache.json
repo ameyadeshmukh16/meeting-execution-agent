@@ -6,7 +6,7 @@
     "madeBy": "Ameya"
    },
    {
-    "text": "Use REST with OpenAPI specs and no GraphQL this quarter.",
+    "text": "Use REST with OpenAPI specs for APIs; no GraphQL this quarter.",
     "madeBy": "Gowtham"
    }
   ],
@@ -25,7 +25,7 @@
  "db3b67dd8d95074da7e2e92138a51dc0800d46832a8944daaac5eae37c23eea3": {
   "decisions": [
    {
-    "text": "Use Mongo for billing.",
+    "text": "Switch to Mongo for billing.",
     "madeBy": "Ameya"
    },
    {
@@ -132,7 +132,7 @@
  "8d8640a5540611425e50a5774eec1184dd0d294fa322ba716984182f5a377a2a": {
   "decisions": [
    {
-    "text": "Move billing back to Postgres.",
+    "text": "Move billing back to Postgres",
     "madeBy": "Ameya"
    }
   ],
@@ -165,5 +165,122 @@
     "reasoning": "This reverses the current decision to use Mongo for billing, which was set in Sprint Planning 14. Switching to Postgres would break that active billing database choice."
    }
   ]
+ },
+ "dfeab20edc61ff2d99b9d281297377697112e18a30cf0be1e4679667fa0808d9": {
+  "conflicts": []
+ },
+ "6b9093146f4a2907c5c2d681c8057417ee3778d1a6e0d6900e83175c22d421d8": {
+  "intent": "confirm",
+  "actionItems": [
+   {
+    "task": "Set up Postgres schema for billing",
+    "owner": "Gowtham",
+    "deadline": "2026-10-07",
+    "deadlineText": "next Wednesday"
+   }
+  ],
+  "reply": "I'm creating the tasks now."
+ },
+ "8d5db5c334285d366a34b6dabbe556cb09c82e92db4f69cb8df2ac2d1eea7e12": {
+  "conflicts": [
+   {
+    "newDecision": "Switch to Mongo for billing.",
+    "conflictsWithId": "d1",
+    "reasoning": "Switching billing to Mongo breaks the rule to use Postgres as the primary database for all new services. It matters because the team chose Postgres to avoid operating another database and to rely on skills they already have."
+   }
+  ]
+ },
+ "7a22fdeb7a1026ba43f0b1babd89c0e942880b2392116c53427ee9573cc58f70": {
+  "intent": "edit",
+  "actionItems": [
+   {
+    "task": "Set up Mongo for billing",
+    "owner": "Gowtham",
+    "deadline": "2026-10-28",
+    "deadlineText": "Wednesday"
+   },
+   {
+    "task": "Set up Memcached cache layer",
+    "owner": "Priya",
+    "deadline": "2026-10-30",
+    "deadlineText": "Friday"
+   },
+   {
+    "task": "Write invoice migration plan",
+    "owner": "Priya",
+    "deadline": "2026-11-02",
+    "deadlineText": "next Monday"
+   },
+   {
+    "task": "Update billing API docs",
+    "owner": "Ameya",
+    "deadline": "2026-10-30",
+    "deadlineText": "Friday"
+   }
+  ],
+  "reply": "Done, the second task is now due Friday, October 30. Anything else?"
+ },
+ "4287459c529e0d14b33a475f951ea90c68a56ac409206aaca562ad673c3f1474": {
+  "intent": "confirm",
+  "actionItems": [
+   {
+    "task": "Set up Mongo for billing",
+    "owner": "Gowtham",
+    "deadline": "2026-10-28",
+    "deadlineText": "Wednesday"
+   },
+   {
+    "task": "Set up Memcached cache layer",
+    "owner": "Priya",
+    "deadline": "2026-10-30",
+    "deadlineText": "Friday"
+   },
+   {
+    "task": "Write invoice migration plan",
+    "owner": "Priya",
+    "deadline": "2026-11-02",
+    "deadlineText": "next Monday"
+   },
+   {
+    "task": "Update billing API docs",
+    "owner": "Ameya",
+    "deadline": "2026-10-30",
+    "deadlineText": "Friday"
+   }
+  ],
+  "reply": "I'm creating all four tasks now. Anything else?"
+ },
+ "881ac7f130021c8112ede48d46e6076fbb99f319e823076ff8b28555663165bb": {
+  "conflicts": [
+   {
+    "newDecision": "Move billing back to Postgres",
+    "conflictsWithId": "L1",
+    "reasoning": "Moving billing back to Postgres reverses the decision to switch billing to Mongo, undoing the database choice made for billing in Sprint Planning 14."
+   }
+  ]
+ },
+ "e1f748615a3fa13378227dd5a8d91ddded19fd5a2e087062b54b5e36cbea388f": {
+  "intent": "confirm",
+  "actionItems": [
+   {
+    "task": "Write Mongo to Postgres export script",
+    "owner": "Gowtham",
+    "deadline": "2026-11-05",
+    "deadlineText": "Thursday"
+   },
+   {
+    "task": "Point cache layer at Postgres",
+    "owner": "Priya",
+    "deadline": "2026-11-09",
+    "deadlineText": "next Monday"
+   },
+   {
+    "task": "Update billing architecture doc",
+    "owner": "Ameya",
+    "deadline": "2026-11-06",
+    "deadlineText": "Friday"
+   }
+  ],
+  "reply": "I'm creating those three tasks now."
  }
 }
