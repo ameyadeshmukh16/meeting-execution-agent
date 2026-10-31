@@ -1,69 +1,86 @@
 "use client";
 
-import { useRef, useState } from "react";
+import React, { useState } from "react";
 import { fmtDate, speak } from "@/lib/dates";
 
-type Evidence = { quote: string; speaker?: string };
-type ActionItem = {
-  task: string;
-  owner: string | null;
-  deadline: string | null;
-  deadlineText?: string | null;
-  ownership?: "accepted" | "assigned" | "unclear";
-  evidence?: Evidence;
-  evidenceVerified?: boolean;
-  evidenceIssue?: EvidenceIssue;
-};
 type EvidenceIssue = "missing" | "not_found" | "wrong_speaker";
-type Decision = {
+type Resolution = "replace" | "keep_both" | "needs_clarification";
+
+interface Evidence {
+  quote?: string;
+  speaker?: string;
+}
+
+interface DecisionItem {
   text: string;
   madeBy?: string;
   topic?: string;
   evidence?: Evidence;
   evidenceVerified?: boolean;
   evidenceIssue?: EvidenceIssue;
-};
-type Accepted = { task: string; at: string };
-const normTask = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
-type PastDecision = { id: string; meeting: string; date: string; decision: string; rationale: string };
-type Conflict = {
+}
+
+interface ActionItem {
+  task: string;
+  owner: string | null;
+  ownership?: "accepted" | "assigned" | "unclear";
+  deadline: string | null;
+  deadlineText?: string | null;
+  evidence?: Evidence;
+  evidenceVerified?: boolean;
+  evidenceIssue?: EvidenceIssue;
+}
+
+interface ConflictItem {
   newDecision: string;
-  conflictsWith: PastDecision;
+  conflictsWith: {
+    id: string;
+    meeting: string;
+    date: string;
+    decision: string;
+    rationale?: string;
+  };
   reasoning: string;
   type?: "direct_contradiction" | "scope_conflict" | "dependency_conflict";
   suggestedResolution?: string;
-};
-type Resolution = "replace" | "keep_both" | "needs_clarification";
-type ImpactTask = { id: string; task: string; owner: string | null; deadline: string | null; meeting?: string };
-type ImpactEntry = {
+}
+
+interface AffectedTask {
+  id: string;
+  task: string;
+  owner?: string | null;
+  deadline?: string | null;
+  meeting?: string;
+}
+
+interface ImpactItem {
   decision: string;
-  affectedTasks: ImpactTask[];
   affectedSystems: string[];
   potentialConsequences: string[];
+  affectedTasks: AffectedTask[];
+}
+
+interface CreatedTaskItem extends ActionItem {
+  status: "created" | "failed";
+  trelloUrl?: string;
+  error?: string;
+}
+
+interface Accepted {
+  task: string;
+  at: string;
+}
+
+const DEFAULT_REPLY = "Please review the extracted decisions and settle any open conflicts before proceeding.";
+
+const ISSUE_TEXT: Record<EvidenceIssue, string> = {
+  missing: "no transcript evidence",
+  not_found: "quote not found in the transcript",
+  wrong_speaker: "quote attributed to the wrong speaker",
 };
 
-const RESOLUTIONS: { value: Resolution; label: string; hint: string }[] = [
-  { value: "replace", label: "Replace earlier decision", hint: "The new decision supersedes the old one." },
-  { value: "keep_both", label: "Keep both", hint: "They apply to different scopes; both stay in force." },
-  { value: "needs_clarification", label: "Needs clarification", hint: "Keep the earlier decision; park the new one for review." },
-];
-const TYPE_LABEL = {
-  direct_contradiction: "Direct contradiction",
-  scope_conflict: "Scope conflict",
-  dependency_conflict: "Dependency conflict",
-};
-type Phase = "input" | "review" | "done";
-type ExecItem = ActionItem & { status?: "created" | "failed"; trelloUrl?: string; error?: string };
-type ExecResult = { trello: boolean; total: number; created: number; failed: number; items: ExecItem[] };
-
-const DEMOS = [
-  { name: "meeting1", label: "Meeting 1 (baseline)", date: "2026-10-06", title: "Sprint Planning 12" },
-  { name: "meeting2", label: "Meeting 2 (conflict)", date: "2026-10-27", title: "Sprint Planning 14" },
-  { name: "meeting3", label: "Meeting 3 (reversal)", date: "2026-11-03", title: "Standup 2026-11-03" },
-];
-
-
-function readBack(items: ActionItem[], conflicts: Conflict[], impact: ImpactEntry[]) {
+/** The full spoken summary: tasks, owners, evidence gaps, conflicts, impact, and what to say next. */
+function readBack(items: ActionItem[], conflicts: ConflictItem[], impact: ImpactItem[]) {
   const parts = [`I found ${items.length} action items.`];
   items.forEach((a, i) => {
     const who = !a.owner ? "No owner" : a.ownership === "unclear" ? `${a.owner}, not confirmed` : a.owner;
@@ -96,459 +113,889 @@ function readBack(items: ActionItem[], conflicts: Conflict[], impact: ImpactEntr
   return parts.join(" ");
 }
 
-/** The transcript line an item came from, or an honest note when it can't be verified. */
-const ISSUE_TEXT: Record<EvidenceIssue, string> = {
-  missing: "no transcript evidence",
-  not_found: "quote not found in the transcript",
-  wrong_speaker: "quote attributed to the wrong speaker",
-};
-
-function EvidenceLine({ e, verified, issue }: { e?: Evidence; verified?: boolean; issue?: EvidenceIssue }) {
-  if (!e?.quote) return <div className="evidence warn">{ISSUE_TEXT.missing}</div>;
-  return (
-    <div className={verified ? "evidence" : "evidence warn"}>
-      “{e.quote}”{e.speaker ? ` — ${e.speaker}` : ""}
-      {!verified && ` (${ISSUE_TEXT[issue ?? "not_found"]})`}
-    </div>
-  );
-}
-
-/** What a decision may affect among existing tasks. Always worded as possibilities. */
-function ImpactBlock({ entry }: { entry?: ImpactEntry }) {
-  if (!entry) return null;
-  return (
-    <div className="impact">
-      <strong>Potential impact</strong>
-      {entry.affectedSystems.length > 0 && <span className="muted"> · {entry.affectedSystems.join(", ")}</span>}
-      {entry.potentialConsequences.length > 0 && (
-        <ul>
-          {entry.potentialConsequences.map((c, i) => (
-            <li key={i}>{c}</li>
-          ))}
-        </ul>
-      )}
-      {entry.affectedTasks.length > 0 && (
-        <>
-          <div className="muted">Existing tasks that may need review (created earlier, not tracked as done):</div>
-          <ul>
-            {entry.affectedTasks.map((t) => (
-              <li key={t.id}>
-                {t.task} — {t.owner ?? "Unassigned"}, {fmtDate(t.deadline)}
-                {t.meeting ? ` · ${t.meeting}` : ""}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-    </div>
-  );
-}
-
-async function post<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const json = await res.json();
+/** POST helper that surfaces the server's own error message. */
+async function apiPost<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
-  return json;
+  return json as T;
+}
+
+/** A transcript quote in curly quotes, with its speaker. */
+function Quote({ evidence }: { evidence?: Evidence }) {
+  if (!evidence?.quote) return null;
+  return (
+    <div className="evidence-quote">
+      {`“${evidence.quote}”${evidence.speaker ? ` — ${evidence.speaker}` : ""}`}
+    </div>
+  );
 }
 
 export default function MeetingPage() {
-  const [phase, setPhase] = useState<Phase>("input");
+  const [phase, setPhase] = useState<"input" | "review" | "done">("input");
+
+  // Input phase state
+  const [meetingName, setMeetingName] = useState("");
+  const [meetingDate, setMeetingDate] = useState("");
   const [transcript, setTranscript] = useState("");
-  const [meetingName, setMeetingName] = useState("Sprint Planning 14");
-  const [meetingDate, setMeetingDate] = useState("2026-10-27");
-  const [decisions, setDecisions] = useState<Decision[]>([]);
-  const [items, setItems] = useState<ActionItem[]>([]);
-  const [conflicts, setConflicts] = useState<Conflict[]>([]);
-  const [impact, setImpact] = useState<ImpactEntry[]>([]);
-  const [impactFailed, setImpactFailed] = useState(false);
-  const [archiveOnReset, setArchiveOnReset] = useState(true);
-  const [resolutions, setResolutions] = useState<Record<string, Resolution>>({});
-  const [utterance, setUtterance] = useState("");
-  const [assistant, setAssistant] = useState("");
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [memoryNote, setMemoryNote] = useState("");
-  const [result, setResult] = useState<ExecResult | null>(null);
-  const [approvalId, setApprovalId] = useState("");
+  const [archiveTrello, setArchiveTrello] = useState(true);
+  const [resetNote, setResetNote] = useState<string | null>(null);
+
+  // Busy/Progress states
+  const [isBusy, setIsBusy] = useState(false);
+  const [progressText, setProgressText] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Review phase state
+  const [approvalId, setApprovalId] = useState<string | null>(null);
+  const [decisions, setDecisions] = useState<DecisionItem[]>([]);
+  const [actionItems, setActionItems] = useState<ActionItem[]>([]);
+  const [conflicts, setConflicts] = useState<ConflictItem[]>([]);
+  const [impactList, setImpactList] = useState<ImpactItem[]>([]);
+  const [impactUnavailable, setImpactUnavailable] = useState(false);
+  const [resolutions, setResolutions] = useState<Record<string, string>>({});
   const [evidenceAccepted, setEvidenceAccepted] = useState<Accepted[]>([]);
-  const [ackReview, setAckReview] = useState(false);
-  const replyRef = useRef<HTMLInputElement>(null);
+  const [acknowledgedReview, setAcknowledgedReview] = useState(false);
+  const [isProceeding, setIsProceeding] = useState(false);
 
-  async function loadDemo(d: (typeof DEMOS)[number]) {
-    const res = await fetch(`/api/demo?name=${d.name}`);
-    setTranscript((await res.json()).transcript);
-    setMeetingDate(d.date);
-    setMeetingName(d.title);
-  }
+  // Voice & Chat interaction
+  const [lastReply, setLastReply] = useState<string>(DEFAULT_REPLY);
+  const [utteranceInput, setUtteranceInput] = useState("");
 
-  async function analyze() {
-    setError(null);
-    setImpactFailed(false);
-    try {
-      setBusy("Extracting decisions and action items…");
-      const ex = await post<{ decisions: Decision[]; actionItems: ActionItem[] }>("/api/extract", { transcript, meetingDate });
-      setBusy("Checking conflicts and impact…");
-      const texts = ex.decisions.map((d) => d.text);
-      // Conflict detection and impact assessment are independent questions; ask them together.
-      const [{ conflicts }, { impact }] = await Promise.all([
-        post<{ conflicts: Conflict[] }>("/api/conflicts", { decisions: texts }),
-        // Impact is advisory: if it fails, conflicts and approval still work, and we say so.
-        post<{ impact: ImpactEntry[] }>("/api/impact", { decisions: texts }).catch(() => {
-          setImpactFailed(true);
-          return { impact: [] as ImpactEntry[] };
-        }),
-      ]);
-      // The server keeps what is being reviewed; only its id comes back to the client.
-      const proposal = await post<{ approvalId: string }>("/api/proposals", {
-        meeting: meetingName,
-        meetingDate,
-        actionItems: ex.actionItems,
-        decisions: ex.decisions.map((d) => ({ text: d.text, topic: d.topic, evidence: d.evidence })),
-        conflicts: conflicts.map((c) => ({ newDecision: c.newDecision, conflictsWithId: c.conflictsWith.id })),
-      });
-      setApprovalId(proposal.approvalId);
-      setDecisions(ex.decisions);
-      setItems(ex.actionItems);
-      setConflicts(conflicts);
-      setImpact(impact);
-      setResolutions({});
-      setEvidenceAccepted([]);
-      setAckReview(false);
-      const spoken = readBack(ex.actionItems, conflicts, impact);
-      setAssistant(spoken);
-      setPhase("review");
-      speak(spoken);
-      setTimeout(() => replyRef.current?.focus(), 100);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(null);
+  // Done phase state
+  const [createdTasks, setCreatedTasks] = useState<CreatedTaskItem[]>([]);
+  const [trelloConfigured, setTrelloConfigured] = useState(false);
+  const [taskSummary, setTaskSummary] = useState({ total: 0, created: 0, failed: 0 });
+
+  /** Clears everything that belongs to one reviewed meeting, so nothing leaks into the next. */
+  const resetReviewState = () => {
+    setApprovalId(null);
+    setDecisions([]);
+    setActionItems([]);
+    setConflicts([]);
+    setImpactList([]);
+    setImpactUnavailable(false);
+    setResolutions({});
+    setEvidenceAccepted([]);
+    setAcknowledgedReview(false);
+    setIsProceeding(false);
+    setLastReply(DEFAULT_REPLY);
+    setUtteranceInput("");
+    setCreatedTasks([]);
+    setTaskSummary({ total: 0, created: 0, failed: 0 });
+    if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+  };
+
+  // Demo transcript loaders
+  const loadDemo = async (demoKey: "meeting1" | "meeting2" | "meeting3") => {
+    setErrorMessage(null);
+    if (demoKey === "meeting1") {
+      setMeetingName("Sprint Planning 12");
+      setMeetingDate("2026-10-06");
+    } else if (demoKey === "meeting2") {
+      setMeetingName("Sprint Planning 14");
+      setMeetingDate("2026-10-27");
+    } else if (demoKey === "meeting3") {
+      setMeetingName("Standup 2026-11-03");
+      setMeetingDate("2026-11-03");
     }
-  }
 
-  /** Records an explicit choice for one conflict. Nothing defaults: the user decides. */
+    try {
+      const res = await fetch(`/api/demo?name=${demoKey}`);
+      if (!res.ok) throw new Error("Failed to load demo transcript");
+      const data = await res.json();
+      setTranscript(data.transcript || "");
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : "Error loading demo transcript");
+    }
+  };
+
+  // Reset Memory Handler
+  const handleReset = async () => {
+    setResetNote(null);
+    setErrorMessage(null);
+    try {
+      const res = await fetch(`/api/tasks${archiveTrello ? "?archive=1" : ""}`, { method: "DELETE" });
+      const data = await res.json();
+      if (res.ok) {
+        setResetNote(
+          archiveTrello
+            ? `Memory reset. Archived ${data.archived ?? 0} Trello card(s)${data.archiveFailed ? `, ${data.archiveFailed} failed` : ""}.`
+            : "Memory reset. Trello cards untouched.",
+        );
+      } else {
+        setErrorMessage(data.error ?? "Failed to reset demo memory.");
+      }
+    } catch {
+      setErrorMessage("Error communicating with reset endpoint.");
+    }
+  };
+
+  // Analyze Meeting (Input -> Review)
+  const handleAnalyzeMeeting = async () => {
+    setIsBusy(true);
+    setErrorMessage(null);
+    resetReviewState();
+    setProgressText("Extracting decisions and action items…");
+
+    try {
+      // 1. POST /api/extract
+      const extracted = await apiPost<{ decisions: DecisionItem[]; actionItems: ActionItem[] }>("/api/extract", {
+        transcript,
+        meetingDate,
+      });
+      const extractedDecisions = extracted.decisions || [];
+      const extractedActionItems = extracted.actionItems || [];
+      const decTexts = extractedDecisions.map((d) => d.text);
+
+      setProgressText("Checking conflicts and impact…");
+
+      // 2 + 3. Conflicts and impact are independent questions; ask them together.
+      // A failed conflict check must stop the flow (we cannot claim "no conflicts" unchecked).
+      // Impact is advisory: if it fails we say so and carry on.
+      const [conflictData, impactData] = await Promise.all([
+        apiPost<{ conflicts: ConflictItem[] }>("/api/conflicts", { decisions: decTexts }),
+        apiPost<{ impact: ImpactItem[] }>("/api/impact", { decisions: decTexts }).catch(() => null),
+      ]);
+      const loadedConflicts = conflictData.conflicts || [];
+      const loadedImpact = impactData?.impact || [];
+
+      // 4. POST /api/proposals: the server keeps what is being reviewed; only its id comes back.
+      const proposal = await apiPost<{ approvalId: string }>("/api/proposals", {
+        meeting: meetingName,
+        meetingDate: meetingDate,
+        actionItems: extractedActionItems,
+        decisions: extractedDecisions.map((d) => ({
+          text: d.text,
+          topic: d.topic,
+          evidence: d.evidence,
+        })),
+        conflicts: loadedConflicts.map((c) => ({
+          newDecision: c.newDecision,
+          conflictsWithId: c.conflictsWith.id,
+        })),
+      });
+
+      setApprovalId(proposal.approvalId);
+      setDecisions(extractedDecisions);
+      setActionItems(extractedActionItems);
+      setConflicts(loadedConflicts);
+      setImpactList(loadedImpact);
+      setImpactUnavailable(impactData === null);
+
+      const spoken = readBack(extractedActionItems, loadedConflicts, loadedImpact);
+      setLastReply(spoken);
+      speak(spoken);
+
+      setPhase("review");
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : "Error analyzing meeting.");
+    } finally {
+      setIsBusy(false);
+      setProgressText("");
+    }
+  };
+
   /** Sends one explicit human decision to the server and mirrors the server's state back. */
-  async function decide(body: Record<string, unknown>) {
-    setError(null);
+  const decide = async (body: Record<string, unknown>) => {
+    if (!approvalId) return;
+    setErrorMessage(null);
     try {
       const res = await fetch("/api/proposals", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ approvalId, ...body }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
-      setResolutions(json.resolutions);
-      setEvidenceAccepted(json.evidenceAccepted ?? []);
-      setAckReview(!!json.acknowledgedReview);
-    } catch (e) {
-      setError(String(e));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
+      setResolutions(data.resolutions || {});
+      setEvidenceAccepted(data.evidenceAccepted || []);
+      setAcknowledgedReview(Boolean(data.acknowledgedReview));
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : "Could not record your decision.");
     }
-  }
-  const choose = (index: number, resolution: Resolution) => decide({ index, resolution });
-  const isAccepted = (a: ActionItem) => evidenceAccepted.some((x) => normTask(x.task) === normTask(a.task));
-  const underReview = Object.values(resolutions).includes("needs_clarification");
+  };
 
-  /** Safe to call again: the server only creates items that don't exist yet. */
-  async function executeTasks() {
-    setError(null);
-    setBusy("Creating tasks…");
+  const handleSelectResolution = (index: number, resolution: Resolution) => decide({ index, resolution });
+  const handleAcceptEvidence = (index: number) => decide({ acceptEvidence: index });
+  const handleProceedAnyway = async () => {
+    setIsProceeding(true);
     try {
-      setResult(await post<ExecResult>("/api/tasks", { approvalId }));
+      await decide({ acknowledgeReview: true });
+    } finally {
+      setIsProceeding(false);
+    }
+  };
+
+  // Execute Tasks Creation (safe to call again: the server only creates items that don't exist yet)
+  const handleExecuteTasks = async () => {
+    if (!approvalId) return;
+    setIsBusy(true);
+    setErrorMessage(null);
+    try {
+      const data = await apiPost<{
+        items: CreatedTaskItem[];
+        trello: boolean;
+        total?: number;
+        created?: number;
+        failed?: number;
+      }>("/api/tasks", { approvalId });
+      setCreatedTasks(data.items || []);
+      setTrelloConfigured(Boolean(data.trello));
+      setTaskSummary({
+        total: data.total ?? data.items?.length ?? 0,
+        created: data.created ?? 0,
+        failed: data.failed ?? 0,
+      });
       setPhase("done");
-    } catch (e) {
-      setError(String(e));
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : "Error creating tasks.");
     } finally {
-      setBusy(null);
+      setIsBusy(false);
     }
-  }
+  };
 
-  async function respond() {
-    if (!utterance.trim()) return;
-    setError(null);
-    setBusy("Understanding your response…");
+  // User Utterance Submission (verbatim, never trimmed or reformatted)
+  const handleSendUtterance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!approvalId || isBusy || !utteranceInput) return;
+
+    setIsBusy(true);
+    setErrorMessage(null);
     try {
-      const r = await post<{
-        intent: "confirm" | "edit" | "cancel" | "blocked" | "resolved";
-        actionItems: ActionItem[];
-        reply: string;
-        resolutions?: Record<string, Resolution>;
-        evidenceAccepted?: Accepted[];
-        acknowledgedReview?: boolean;
-      }>("/api/confirm", { approvalId, utterance });
-      setUtterance("");
-      setAssistant(r.reply);
-      speak(r.reply);
-      if (r.resolutions) setResolutions(r.resolutions);
-      if (r.evidenceAccepted) setEvidenceAccepted(r.evidenceAccepted);
-      if (r.acknowledgedReview !== undefined) setAckReview(r.acknowledgedReview);
-      if (r.intent === "resolved") setItems(r.actionItems);
-      if (r.intent === "edit" || r.intent === "blocked") setItems(r.actionItems);
-      if (r.intent === "cancel") reset();
-      if (r.intent === "confirm") {
-        setBusy(null);
-        await executeTasks();
+      const res = await fetch("/api/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approvalId, utterance: utteranceInput }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setErrorMessage(data.error || "Error processing your request.");
+        return;
       }
-    } catch (e) {
-      setError(String(e));
+
+      if (data.reply) {
+        setLastReply(data.reply);
+        speak(data.reply);
+      }
+      if (data.actionItems) setActionItems(data.actionItems);
+      if (data.resolutions) setResolutions(data.resolutions);
+      if (data.evidenceAccepted) setEvidenceAccepted(data.evidenceAccepted);
+      if (data.acknowledgedReview !== undefined) setAcknowledgedReview(Boolean(data.acknowledgedReview));
+
+      setUtteranceInput("");
+
+      if (data.intent === "confirm") {
+        setIsBusy(false);
+        await handleExecuteTasks();
+      } else if (data.intent === "cancel") {
+        resetReviewState();
+        setPhase("input");
+      }
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : "Voice confirm failed.");
     } finally {
-      setBusy(null);
+      setIsBusy(false);
     }
-  }
+  };
 
-  async function resetMemory() {
-    setError(null);
-    try {
-      const res = await fetch(`/api/tasks${archiveOnReset ? "?archive=1" : ""}`, { method: "DELETE" });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
-      setMemoryNote(
-        `Cleared learned decisions and saved tasks. ${archiveOnReset ? `Archived ${json.archived} Trello card(s)${json.archiveFailed ? `, ${json.archiveFailed} failed` : ""}.` : "Trello cards untouched."}`,
-      );
-    } catch (e) {
-      setError(String(e));
-    }
-  }
-
-  function reset() {
-    setPhase("input");
-    setDecisions([]);
-    setItems([]);
-    setConflicts([]);
-    setImpact([]);
-    setResolutions({});
-    setEvidenceAccepted([]);
-    setAckReview(false);
-    setAssistant("");
-    setApprovalId("");
-    setResult(null);
-    window.speechSynthesis?.cancel();
-  }
+  // Helper formatting conflict type label
+  const formatConflictType = (type?: string) => {
+    if (type === "direct_contradiction") return "Direct Contradiction";
+    if (type === "scope_conflict") return "Scope Conflict";
+    if (type === "dependency_conflict") return "Dependency Conflict";
+    return "Contradiction";
+  };
 
   return (
-    <>
+    <div>
+      {/* Workflow Indicator */}
+      <div className="flow-progress-bar">
+        <div className={`flow-step ${phase === "input" ? "active" : "done"}`}>
+          <span className="flow-step-num">1</span>
+          <span>Input & Transcript</span>
+        </div>
+        <div className="flow-divider" />
+        <div className={`flow-step ${phase === "review" ? "active" : phase === "done" ? "done" : ""}`}>
+          <span className="flow-step-num">2</span>
+          <span>Review & Align</span>
+        </div>
+        <div className="flow-divider" />
+        <div className={`flow-step ${phase === "done" ? "active done" : ""}`}>
+          <span className="flow-step-num">3</span>
+          <span>Executed Tasks</span>
+        </div>
+      </div>
 
-      {phase === "input" && (
-        <section className="card">
-          <h2>Start with a meeting</h2>
-          <p className="muted intro">
-            Paste or dictate a speaker-tagged transcript. The agent extracts decisions and tasks, checks them against what the team
-            already decided, and waits for your approval before creating anything.
-          </p>
-          <div className="row">
-            {DEMOS.map((d) => (
-              <button key={d.name} className="ghost" onClick={() => loadDemo(d)}>
-                Load {d.label}
-              </button>
-            ))}
-          </div>
-          <div className="row">
-            <label>
-              Meeting
-              <input value={meetingName} onChange={(e) => setMeetingName(e.target.value)} />
-            </label>
-            <label>
-              Date
-              <input type="date" value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} />
-            </label>
-          </div>
-          <textarea
-            rows={12}
-            placeholder={"Paste or dictate a speaker-tagged transcript:\nAmeya: Let's ship on Friday...\nGowtham: I'll take the migration."}
-            value={transcript}
-            onChange={(e) => setTranscript(e.target.value)}
-          />
-          <div className="row">
-            <button onClick={analyze} disabled={!transcript.trim() || !!busy}>
-              {busy ?? "Analyze meeting"}
-            </button>
-            <button className="ghost" disabled={!!busy} onClick={resetMemory}>
-              Reset demo memory
-            </button>
-            <label className="inline">
-              <input type="checkbox" checked={archiveOnReset} onChange={(e) => setArchiveOnReset(e.target.checked)} />
-              also archive Trello cards created by this app
-            </label>
-            {memoryNote && <span className="muted">{memoryNote}</span>}
-          </div>
-        </section>
+      {errorMessage && (
+        <div
+          className="under-review-banner"
+          style={{ background: "var(--danger-soft)", color: "var(--danger-text)", borderColor: "var(--danger-border)" }}
+        >
+          <span>⚠️ {errorMessage}</span>
+        </div>
       )}
 
-      {phase === "review" && (
-        <>
-          {impactFailed && (
-            <p className="muted">Impact check was unavailable for this meeting, so potential impact is not shown. Conflicts below are unaffected.</p>
-          )}
-          {conflicts.map((c, i) => (
-            <section key={i} className="conflict">
-              <div className="badge">
-                ⚠ Conflict with an earlier decision{c.type ? ` · ${TYPE_LABEL[c.type]}` : ""}
-              </div>
-              <div className="versus">
-                <div>
-                  <small>
-                    Earlier · {c.conflictsWith.meeting} · {fmtDate(c.conflictsWith.date)}
-                  </small>
-                  <p>{c.conflictsWith.decision}</p>
-                </div>
-                <div className="arrow">→</div>
-                <div>
-                  <small>Now · {meetingName}</small>
-                  <p>{c.newDecision}</p>
-                </div>
-              </div>
-              <p className="why">
-                <strong>Why this matters:</strong> {c.reasoning}
-              </p>
-              <ImpactBlock entry={impact.find((m) => m.decision === c.newDecision)} />
-              {c.suggestedResolution && (
-                <p className="why">
-                  <strong>Suggested next step:</strong> {c.suggestedResolution}
-                </p>
-              )}
-              <div className="choices">
-                {RESOLUTIONS.map((r) => (
-                  <button
-                    key={r.value}
-                    className={resolutions[String(i)] === r.value ? "" : "ghost"}
-                    title={r.hint}
-                    onClick={() => choose(i, r.value)}
-                  >
-                    {resolutions[String(i)] === r.value ? "✓ " : ""}
-                    {r.label}
-                  </button>
-                ))}
-              </div>
-              {!resolutions[String(i)] && <p className="muted">Choose how to handle this before the tasks can be created.</p>}
-            </section>
-          ))}
+      {/* PHASE 1: INPUT */}
+      {phase === "input" && (
+        <div>
+          <div className="demo-preset-panel">
+            <span className="preset-title">Fast Demo Pre-load</span>
+            <div className="preset-buttons">
+              <button type="button" className="btn-preset" onClick={() => loadDemo("meeting1")}>
+                📂 Load Meeting 1 (Baseline)
+              </button>
+              <button type="button" className="btn-preset" onClick={() => loadDemo("meeting2")}>
+                ⚡ Load Meeting 2 (Conflict)
+              </button>
+              <button type="button" className="btn-preset" onClick={() => loadDemo("meeting3")}>
+                🔄 Load Meeting 3 (Reversal)
+              </button>
+            </div>
+          </div>
 
-          {impact
-            .filter((m) => !conflicts.some((c) => c.newDecision === m.decision))
-            .map((m) => (
-              <section key={m.decision} className="card">
-                <h2>Potential impact of: {m.decision}</h2>
-                <ImpactBlock entry={m} />
-              </section>
+          <div className="ui-card">
+            <h2 className="ui-card-title" style={{ marginBottom: "0.5rem" }}>
+              Meeting Ingestion
+            </h2>
+            <p style={{ color: "var(--text-tertiary)", fontSize: "0.875rem", marginBottom: "1.25rem" }}>
+              Paste or dictate a speaker-tagged transcript. The agent extracts decisions and tasks, checks them against what
+              the team already decided, and waits for your approval before creating anything.
+            </p>
+
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label className="form-label" htmlFor="meetingName">
+                  Meeting Name
+                </label>
+                <input
+                  id="meetingName"
+                  className="form-input"
+                  type="text"
+                  placeholder="e.g. Sprint Planning 14"
+                  value={meetingName}
+                  onChange={(e) => setMeetingName(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="meetingDate">
+                  Meeting Date
+                </label>
+                <input
+                  id="meetingDate"
+                  className="form-input"
+                  type="date"
+                  value={meetingDate}
+                  onChange={(e) => setMeetingDate(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="transcript">
+                Speaker-Tagged Transcript
+              </label>
+              <textarea
+                id="transcript"
+                className="form-textarea"
+                placeholder="Ameya: Let's ship on Friday...&#10;Gowtham: I'll take the migration."
+                value={transcript}
+                onChange={(e) => setTranscript(e.target.value)}
+              />
+            </div>
+
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={isBusy || !transcript || !meetingName || !meetingDate}
+              onClick={handleAnalyzeMeeting}
+              style={{ width: "100%", padding: "0.875rem" }}
+            >
+              {isBusy ? progressText : "Analyze Meeting & Detect Conflicts →"}
+            </button>
+          </div>
+
+          <div className="reset-memory-bar">
+            <div className="reset-controls">
+              <label className="reset-checkbox-label">
+                <input type="checkbox" checked={archiveTrello} onChange={(e) => setArchiveTrello(e.target.checked)} />
+                Also archive Trello cards created by this app
+              </label>
+              <button type="button" className="btn-danger-outline" disabled={isBusy} onClick={handleReset}>
+                Reset demo memory
+              </button>
+            </div>
+            {resetNote && (
+              <span style={{ fontSize: "0.8125rem", color: "var(--success-primary)", fontWeight: 500 }}>{resetNote}</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* PHASE 2: REVIEW */}
+      {phase === "review" && (
+        <div>
+          {impactUnavailable && (
+            <div
+              className="under-review-banner"
+              style={{ background: "var(--bg-subtle)", color: "var(--text-secondary)", borderColor: "var(--border-strong)" }}
+            >
+              <span>Impact check was unavailable for this meeting, so potential impact is not shown. Conflicts are unaffected.</span>
+            </div>
+          )}
+
+          {/* HERO CONFLICT CARDS */}
+          {conflicts.map((conflict, idx) => {
+            const currentChoice = resolutions[String(idx)];
+            const matchedImpact = impactList.find((imp) => imp.decision === conflict.newDecision);
+
+            return (
+              <div key={idx} className="hero-conflict-card">
+                <div className="conflict-banner">
+                  <div className="conflict-banner-left">
+                    <span>⚡ Conflict with an earlier decision</span>
+                    <span className="conflict-type-pill">{formatConflictType(conflict.type)}</span>
+                  </div>
+                  <span style={{ fontSize: "0.75rem", opacity: 0.9 }}>Action required to proceed</span>
+                </div>
+
+                <div className="conflict-body">
+                  {/* Earlier vs Now Split Comparison */}
+                  <div className="comparison-grid">
+                    <div className="comparison-panel earlier">
+                      <span className="panel-meta">
+                        Earlier · {conflict.conflictsWith.meeting} · {fmtDate(conflict.conflictsWith.date)}
+                      </span>
+                      <p className="panel-text">{conflict.conflictsWith.decision}</p>
+                      {conflict.conflictsWith.rationale && (
+                        <span style={{ fontSize: "0.8125rem", color: "var(--text-tertiary)" }}>
+                          Rationale: {conflict.conflictsWith.rationale}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="comparison-arrow">➔</div>
+
+                    <div className="comparison-panel now">
+                      <span className="panel-meta now-meta">Now · {meetingName}</span>
+                      <p className="panel-text">{conflict.newDecision}</p>
+                    </div>
+                  </div>
+
+                  {/* Why this matters & Suggested next step */}
+                  <div className="conflict-insight-block">
+                    <div className="insight-section">
+                      <span className="insight-label">Why this matters</span>
+                      <p className="insight-content">{conflict.reasoning}</p>
+                    </div>
+                    {conflict.suggestedResolution && (
+                      <div className="insight-section">
+                        <span className="insight-label">Suggested next step</span>
+                        <p className="insight-content">{conflict.suggestedResolution}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Potential Impact */}
+                  {matchedImpact && (
+                    <div className="impact-summary-box">
+                      <span className="impact-header-line">⚠️ Potential Impact Assessment</span>
+
+                      {matchedImpact.affectedSystems?.length > 0 && (
+                        <div>
+                          <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", fontWeight: 600 }}>
+                            Affected Systems:
+                          </span>
+                          <div className="systems-tag-list" style={{ marginTop: "0.25rem" }}>
+                            {matchedImpact.affectedSystems.map((sys, sIdx) => (
+                              <span key={sIdx} className="system-tag">
+                                {sys}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {matchedImpact.potentialConsequences?.length > 0 && (
+                        <ul className="consequences-list">
+                          {matchedImpact.potentialConsequences.map((c, cIdx) => (
+                            <li key={cIdx}>{c}</li>
+                          ))}
+                        </ul>
+                      )}
+
+                      {matchedImpact.affectedTasks?.length > 0 && (
+                        <div>
+                          <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", fontWeight: 600 }}>
+                            Existing tasks that may need review (created earlier, not tracked as done):
+                          </span>
+                          <div className="affected-tasks-table-wrapper">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>Task</th>
+                                  <th>Owner</th>
+                                  <th>Due Date</th>
+                                  <th>Meeting</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {matchedImpact.affectedTasks.map((at) => (
+                                  <tr key={at.id}>
+                                    <td>{at.task}</td>
+                                    <td>{at.owner || "Unassigned"}</td>
+                                    <td>
+                                      <span className="pill pill-neutral">{at.deadline || "None"}</span>
+                                    </td>
+                                    <td>{at.meeting || "Earlier"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Conflict Choice Action Buttons: nothing defaults, the user decides */}
+                <div className="resolution-dock">
+                  {!currentChoice && (
+                    <p className="resolution-hint">
+                      <span>⚠️</span> Choose how to handle this before the tasks can be created.
+                    </p>
+                  )}
+                  <div className="resolution-buttons">
+                    <button
+                      type="button"
+                      className={`btn-choice ${currentChoice === "replace" ? "selected" : ""}`}
+                      onClick={() => handleSelectResolution(idx, "replace")}
+                    >
+                      {currentChoice === "replace" ? "✓ " : ""}Replace earlier decision
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn-choice ${currentChoice === "keep_both" ? "selected" : ""}`}
+                      onClick={() => handleSelectResolution(idx, "keep_both")}
+                    >
+                      {currentChoice === "keep_both" ? "✓ " : ""}Keep both
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn-choice ${currentChoice === "needs_clarification" ? "selected" : ""}`}
+                      onClick={() => handleSelectResolution(idx, "needs_clarification")}
+                    >
+                      {currentChoice === "needs_clarification" ? "✓ " : ""}Needs clarification
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Impact Cards for decisions with impact but no conflict */}
+          {impactList
+            .filter((imp) => !conflicts.some((c) => c.newDecision === imp.decision))
+            .map((imp, idx) => (
+              <div key={idx} className="ui-card" style={{ borderLeft: "4px solid var(--info-primary)" }}>
+                <div className="ui-card-header">
+                  <div>
+                    <span className="pill pill-info" style={{ marginBottom: "0.25rem" }}>
+                      Potential Impact
+                    </span>
+                    <h3 className="ui-card-title">{imp.decision}</h3>
+                  </div>
+                </div>
+                {imp.affectedSystems?.length > 0 && (
+                  <div className="systems-tag-list" style={{ marginBottom: "0.5rem" }}>
+                    {imp.affectedSystems.map((s, sIdx) => (
+                      <span key={sIdx} className="system-tag">
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <ul className="consequences-list">
+                  {imp.potentialConsequences?.map((c, cIdx) => (
+                    <li key={cIdx}>{c}</li>
+                  ))}
+                </ul>
+                {imp.affectedTasks?.length > 0 && (
+                  <ul className="consequences-list" style={{ marginTop: "0.5rem" }}>
+                    {imp.affectedTasks.map((t) => (
+                      <li key={t.id}>
+                        <strong>{t.task}</strong> — {t.owner || "Unassigned"}, due {t.deadline || "no date"}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             ))}
 
-          {underReview && (
-            <section className="card">
-              {ackReview ? (
-                <p className="muted">Proceeding while a decision stays under review (recorded).</p>
+          {/* Under Review Notice Banner */}
+          {Object.values(resolutions).includes("needs_clarification") && (
+            <div className="under-review-banner">
+              <div>
+                <strong>A decision is left under review</strong>
+                <p style={{ fontSize: "0.8125rem", marginTop: "0.25rem" }}>
+                  Tasks can still be created, but the decision stays unresolved and nothing here treats it as settled.
+                </p>
+              </div>
+              {acknowledgedReview ? (
+                <span style={{ fontSize: "0.8125rem", fontStyle: "italic" }}>Proceeding… (recorded)</span>
               ) : (
-                <>
-                  <p>
-                    <strong>A decision is left under review.</strong> Tasks can still be created, but the decision stays
-                    unresolved and nothing here treats it as settled.
-                  </p>
-                  <button onClick={() => decide({ acknowledgeReview: true })}>Proceed anyway</button>
-                </>
+                <button type="button" className="btn-secondary" disabled={isProceeding} onClick={handleProceedAnyway}>
+                  Proceed anyway
+                </button>
               )}
-            </section>
+            </div>
           )}
 
-          <section className="card">
-            <h2>Decisions</h2>
-            <ul>
-              {decisions.map((d, i) => (
-                <li key={i}>
-                  {d.text}
-                  <EvidenceLine e={d.evidence} verified={d.evidenceVerified} issue={d.evidenceIssue} />
-                </li>
-              ))}
-              {decisions.length === 0 && <li className="muted">None found</li>}
-            </ul>
-            <h2>Action items</h2>
-            <table>
+          {/* Extracted Decisions List */}
+          <div className="ui-card">
+            <h3 className="ui-card-title" style={{ marginBottom: "1rem" }}>
+              Extracted Decisions ({decisions.length})
+            </h3>
+            <div className="data-table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Decision</th>
+                    <th>Topic</th>
+                    <th>Evidence Quote</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {decisions.map((dec, idx) => (
+                    <tr key={idx}>
+                      <td style={{ fontWeight: 600 }}>{dec.text}</td>
+                      <td>
+                        <span className="pill pill-neutral">{dec.topic || "General"}</span>
+                      </td>
+                      <td>
+                        {dec.evidence?.quote ? <Quote evidence={dec.evidence} /> : null}
+                        {!dec.evidenceVerified && (
+                          <div className="evidence-warning">
+                            <span>⚠️ Evidence not verified ({ISSUE_TEXT[dec.evidenceIssue ?? "missing"]})</span>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {decisions.length === 0 && (
+                    <tr>
+                      <td colSpan={3} style={{ color: "var(--text-tertiary)" }}>
+                        No decisions found in this meeting.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Extracted Action Items Table */}
+          <div className="ui-card">
+            <h3 className="ui-card-title" style={{ marginBottom: "1rem" }}>
+              Action Items & Accountability ({actionItems.length})
+            </h3>
+            <div className="data-table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: "3rem" }}>#</th>
+                    <th>Task & Evidence</th>
+                    <th>Owner</th>
+                    <th>Deadline</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {actionItems.map((item, idx) => {
+                    const isAccepted = evidenceAccepted.some(
+                      (ea) => ea.task.trim().toLowerCase() === item.task.trim().toLowerCase(),
+                    );
+                    const missingOwner = !item.owner || item.ownership === "unclear";
+
+                    return (
+                      <tr key={idx}>
+                        <td style={{ color: "var(--text-tertiary)", fontWeight: 600 }}>{idx + 1}</td>
+                        <td>
+                          <div className="task-title">{item.task}</div>
+                          <Quote evidence={item.evidence} />
+
+                          {!item.evidenceVerified && !isAccepted && (
+                            <div className="evidence-warning">
+                              <span>⚠️ Evidence not verified ({ISSUE_TEXT[item.evidenceIssue ?? "missing"]})</span>
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                style={{ padding: "0.2rem 0.5rem", fontSize: "0.6875rem" }}
+                                onClick={() => handleAcceptEvidence(idx)}
+                              >
+                                Accept without evidence
+                              </button>
+                            </div>
+                          )}
+
+                          {!item.evidenceVerified && isAccepted && (
+                            <div style={{ fontSize: "0.6875rem", color: "var(--text-tertiary)", marginTop: "0.25rem" }}>
+                              accepted without verified evidence (recorded)
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          {missingOwner ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.375rem", flexWrap: "wrap" }}>
+                              <span style={{ color: item.owner ? "var(--text-primary)" : "var(--text-tertiary)", fontWeight: item.owner ? 600 : 400 }}>
+                                {item.owner ?? "Unassigned"}
+                              </span>
+                              <span className="pill pill-danger">needs owner</span>
+                            </div>
+                          ) : (
+                            <span style={{ fontWeight: 600 }}>{item.owner}</span>
+                          )}
+                        </td>
+                        <td>
+                          {item.deadline ? (
+                            <span className="pill pill-neutral">{item.deadline}</span>
+                          ) : (
+                            <span style={{ color: "var(--text-tertiary)" }}>No date</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Voice & Assistant Interaction Dock */}
+          <div className="voice-dock">
+            <div className="assistant-speech-bubble">
+              <span className="assistant-avatar">🤖</span>
+              <div className="assistant-text">
+                <strong>Assistant:</strong> {lastReply}
+              </div>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => speak(lastReply)}
+                title="Replay Voice Summary"
+                style={{ padding: "0.375rem 0.625rem", fontSize: "0.75rem" }}
+              >
+                🔊 Replay
+              </button>
+            </div>
+
+            <form onSubmit={handleSendUtterance} className="voice-input-row">
+              <input
+                className="voice-input"
+                type="text"
+                placeholder="Type or dictate (e.g. “confirm”, “replace the earlier decision”, “change the second deadline to Friday”)"
+                value={utteranceInput}
+                onChange={(e) => setUtteranceInput(e.target.value)}
+                disabled={isBusy}
+                autoComplete="off"
+              />
+              <button type="submit" className="btn-primary" disabled={isBusy || !utteranceInput}>
+                Send
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PHASE 3: DONE */}
+      {phase === "done" && (
+        <div className="ui-card">
+          <div style={{ marginBottom: "1.5rem" }}>
+            <span
+              className={`pill ${taskSummary.failed === 0 ? "pill-success" : "pill-warning"}`}
+              style={{ fontSize: "0.8125rem", padding: "0.25rem 0.75rem", marginBottom: "0.5rem" }}
+            >
+              {taskSummary.failed === 0 ? "✓ Complete" : "⚠️ Attention Required"}
+            </span>
+            <h2 className="ui-card-title" style={{ fontSize: "1.5rem", marginTop: "0.5rem" }}>
+              {taskSummary.created} of {taskSummary.total} tasks created
+            </h2>
+            <p style={{ color: "var(--text-tertiary)", fontSize: "0.875rem", marginTop: "0.25rem" }}>
+              {trelloConfigured
+                ? "Cards were created on your Trello board."
+                : "Trello is not configured, so tasks were saved locally only."}
+            </p>
+          </div>
+
+          <div className="data-table-container" style={{ marginBottom: "1.5rem" }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Task</th>
+                  <th>Owner</th>
+                  <th>Deadline</th>
+                  <th>Trello</th>
+                </tr>
+              </thead>
               <tbody>
-                {items.map((a, i) => (
-                  <tr key={i}>
-                    <td className="num">{i + 1}</td>
+                {createdTasks.map((t, idx) => (
+                  <tr key={idx}>
+                    <td style={{ fontWeight: 600 }}>{t.task}</td>
+                    <td>{t.owner || "Unassigned"}</td>
+                    <td>{t.deadline ? <span className="pill pill-neutral">{t.deadline}</span> : "—"}</td>
                     <td>
-                      {a.task}
-                      <EvidenceLine e={a.evidence} verified={a.evidenceVerified} issue={a.evidenceIssue} />
-                      {!a.evidenceVerified &&
-                        (isAccepted(a) ? (
-                          <div className="evidence">accepted without verified evidence (recorded)</div>
+                      {t.status === "created" ? (
+                        t.trelloUrl ? (
+                          <a
+                            href={t.trelloUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="pill pill-success"
+                            style={{ textDecoration: "underline" }}
+                          >
+                            card ↗
+                          </a>
                         ) : (
-                          <button className="ghost small" onClick={() => decide({ acceptEvidence: i })}>
-                            Accept without evidence
-                          </button>
-                        ))}
+                          <span className="pill pill-success">created</span>
+                        )
+                      ) : (
+                        <span className="pill pill-danger">failed: {t.error || "Execution error"}</span>
+                      )}
                     </td>
-                    <td>
-                      {a.owner ?? "Unassigned"}
-                      {(!a.owner || a.ownership === "unclear") && <span className="pill overdue"> needs owner</span>}
-                    </td>
-                    <td>{fmtDate(a.deadline)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </section>
+          </div>
 
-          <section className="card voice">
-            <p className="assistant">🔊 {assistant}</p>
-            <div className="row">
-              <button className="ghost" onClick={() => speak(assistant)}>
-                Replay
-              </button>
-              <button className="ghost" onClick={() => { setUtterance("confirm"); }}>
-                Fill “confirm”
-              </button>
-            </div>
-            <div className="row">
-              <input
-                ref={replyRef}
-                value={utterance}
-                placeholder="Speak with Wispr: “change the second deadline to Friday” or “confirm”"
-                onChange={(e) => setUtterance(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && respond()}
-                disabled={!!busy}
-              />
-              <button onClick={respond} disabled={!utterance.trim() || !!busy}>
-                {busy ?? "Send"}
-              </button>
-            </div>
-          </section>
-        </>
-      )}
-
-      {phase === "done" && result && (
-        <section className="card">
-          <h2>
-            {result.failed === 0 ? "✅" : "⚠"} {result.created} of {result.total} tasks created
-          </h2>
-          <p className="muted">
-            {result.trello ? "Cards were created on your Trello board." : "Trello is not configured yet, so tasks were saved locally only."}
-          </p>
-          <ul>
-            {result.items.map((a, i) => (
-              <li key={i}>
-                {a.task} — {a.owner}, {fmtDate(a.deadline)}{" "}
-                {a.status === "failed" ? (
-                  <span className="err">failed: {a.error}</span>
-                ) : (
-                  a.trelloUrl && <a href={a.trelloUrl} target="_blank">card</a>
-                )}
-              </li>
-            ))}
-          </ul>
-          <div className="row">
-            {result.failed > 0 && (
-              <button onClick={executeTasks} disabled={!!busy}>
-                {busy ?? `Retry ${result.failed} failed`}
+          <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+            {taskSummary.failed > 0 && (
+              <button type="button" className="btn-primary" onClick={handleExecuteTasks} disabled={isBusy}>
+                {isBusy ? "Retrying…" : `Retry ${taskSummary.failed} failed`}
               </button>
             )}
-            <button className={result.failed > 0 ? "ghost" : ""} onClick={reset}>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                resetReviewState();
+                setTranscript("");
+                setMeetingName("");
+                setMeetingDate("");
+                setPhase("input");
+              }}
+            >
               New meeting
             </button>
           </div>
-        </section>
+        </div>
       )}
-
-      {error && <p className="err">{error}</p>}
-    </>
+    </div>
   );
 }

@@ -1,38 +1,58 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  title: "Meeting Execution Agent",
-  description: "Turn standup transcripts into confirmed, conflict-checked Trello tasks.",
+  title: "Meeting → Execution Agent",
+  description:
+    "Turn meeting decisions into accountable work, without losing the context behind them.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable}`}>
+    // suppressHydrationWarning: browser extensions add attributes to <html> before React loads.
+    <html lang="en" suppressHydrationWarning>
       <body>
-        <nav>
-          <strong>Meeting → Execution</strong>
-          <Link href="/">Meeting</Link>
-          <Link href="/decisions">Decisions</Link>
-          <Link href="/digest">Digest</Link>
-          <Link href="/deadlines">Deadlines</Link>
-        </nav>
-        <div className="strip">
-          <p className="tagline">Turn meeting decisions into accountable work, without losing the context behind them.</p>
+        <div className="app-shell">
+          <header className="app-header">
+            <div className="header-container">
+              <div className="brand-group">
+                <Link href="/" className="brand-logo">
+                  <span className="brand-icon">⚡</span>
+                  <div className="brand-titles">
+                    <span className="brand-name">Execution Agent</span>
+                    <span className="brand-badge">Decision Continuity</span>
+                  </div>
+                </Link>
+                <p className="brand-tagline">
+                  Turn meeting decisions into accountable work, without losing the
+                  context behind them.
+                </p>
+              </div>
+
+              <nav className="app-nav" aria-label="Main Navigation">
+                <Link href="/" className="nav-link">
+                  Meeting
+                </Link>
+                <Link href="/decisions" className="nav-link">
+                  Decisions
+                </Link>
+                <Link href="/digest" className="nav-link">
+                  Digest
+                </Link>
+                <Link href="/deadlines" className="nav-link">
+                  Deadlines
+                </Link>
+              </nav>
+            </div>
+          </header>
+
+          <main className="main-viewport">{children}</main>
         </div>
-        <main>{children}</main>
       </body>
     </html>
   );
