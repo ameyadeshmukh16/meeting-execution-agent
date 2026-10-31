@@ -1,0 +1,6 @@
+Ameya: Okay, quick sprint planning. First thing, the database question for the new billing service.
+Gowtham: I'd say we just standardize on Postgres. We already run it, everyone knows it, and the JSON columns cover our flexible fields.
+Ameya: Agreed. Postgres for all new services, done.
+Gowtham: For APIs, I'm keeping REST with OpenAPI specs. No GraphQL this quarter.
+Ameya: Fine. Gowtham, can you set up the Postgres schema for billing by next Wednesday?
+Gowtham: Yes, I'll have it by Wednesday.

@@ -1,0 +1,8 @@
+[
+  {"id": "d1", "meeting": "Sprint Planning 12", "date": "2026-10-06", "decision": "Standardize on Postgres as the primary database for all new services.", "rationale": "Team already knows it; strong JSON support; one fewer system to operate."},
+  {"id": "d2", "meeting": "Sprint Planning 12", "date": "2026-10-06", "decision": "All public APIs use REST with OpenAPI specs; no GraphQL this quarter.", "rationale": "Keep client integration simple while the team is small."},
+  {"id": "d3", "meeting": "Standup 2026-10-13", "date": "2026-10-13", "decision": "Code freeze every Thursday 5pm; releases ship on Friday mornings only.", "rationale": "Avoid weekend incidents from late-Friday deploys."},
+  {"id": "d4", "meeting": "Standup 2026-10-15", "date": "2026-10-15", "decision": "Use GitHub Actions for CI; do not introduce Jenkins or CircleCI.", "rationale": "Already included in our plan; no extra vendor."},
+  {"id": "d5", "meeting": "Sprint Planning 13", "date": "2026-10-20", "decision": "Authentication uses short-lived JWTs (15 min) with refresh tokens; no server-side sessions.", "rationale": "Stateless services scale horizontally without sticky sessions."},
+  {"id": "d6", "meeting": "Standup 2026-10-22", "date": "2026-10-22", "decision": "Frontend stays on React with TypeScript; no new framework migrations before the Q1 release.", "rationale": "Avoid churn ahead of the release."}
+]

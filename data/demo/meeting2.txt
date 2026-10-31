@@ -1,0 +1,9 @@
+Ameya: Alright, Sprint Planning 14. The billing service is going to have a lot of unstructured invoice data. Let's switch to Mongo for billing.
+Gowtham: Hmm, Mongo makes sense for the invoice blobs.
+Ameya: Okay, so let's use Redis for the invoice cache... actually no, let's go with Memcached instead. Simpler for what we need.
+Gowtham: Works for me.
+Ameya: Gowtham, you own the Mongo setup for billing. Can you have that done by Wednesday?
+Gowtham: Yes, Wednesday is fine.
+Ameya: Priya, I need the Memcached cache layer ready by Thursday.
+Priya: Sure, Thursday. Also I'll write the migration plan from the old invoice tables, by next Monday.
+Ameya: Good. And I'll update the API docs for the billing endpoints by Friday.

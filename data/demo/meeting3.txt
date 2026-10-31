@@ -1,0 +1,8 @@
+Ameya: Morning. Before anything else, Gowtham, how is the Mongo setup for billing going?
+Gowtham: It's running, but multi-document transactions for invoices are painful. We're spending more time on workarounds than on features.
+Ameya: Yeah, that's a dealbreaker for billing. Let's use DynamoDB... actually no, let's just move billing back to Postgres. We already know it.
+Gowtham: Agreed, that's the safer call.
+Ameya: Gowtham, please write the Mongo to Postgres export script by Thursday.
+Gowtham: Sure, Thursday.
+Priya: I'll point the cache layer at Postgres instead, by next Monday.
+Ameya: Good. And I'll update the billing architecture doc by Friday.

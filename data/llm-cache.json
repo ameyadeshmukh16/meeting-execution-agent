@@ -1,0 +1,169 @@
+{
+ "f705682e58ab8e778f93345170f579a2af8569c19b0fdb283707e5a1df988ab1": {
+  "decisions": [
+   {
+    "text": "Standardize on Postgres for all new services.",
+    "madeBy": "Ameya"
+   },
+   {
+    "text": "Use REST with OpenAPI specs and no GraphQL this quarter.",
+    "madeBy": "Gowtham"
+   }
+  ],
+  "actionItems": [
+   {
+    "task": "Set up Postgres schema for billing",
+    "owner": "Gowtham",
+    "deadline": "2026-10-07",
+    "deadlineText": "next Wednesday"
+   }
+  ]
+ },
+ "4b57a4375f8f890794bd5b6e38af1df6d18fcc118abe04694da79cff05513826": {
+  "conflicts": []
+ },
+ "db3b67dd8d95074da7e2e92138a51dc0800d46832a8944daaac5eae37c23eea3": {
+  "decisions": [
+   {
+    "text": "Use Mongo for billing.",
+    "madeBy": "Ameya"
+   },
+   {
+    "text": "Use Memcached for the invoice cache.",
+    "madeBy": "Ameya"
+   }
+  ],
+  "actionItems": [
+   {
+    "task": "Set up Mongo for billing",
+    "owner": "Gowtham",
+    "deadline": "2026-10-28",
+    "deadlineText": "Wednesday"
+   },
+   {
+    "task": "Set up Memcached cache layer",
+    "owner": "Priya",
+    "deadline": "2026-10-29",
+    "deadlineText": "Thursday"
+   },
+   {
+    "task": "Write invoice migration plan",
+    "owner": "Priya",
+    "deadline": "2026-11-02",
+    "deadlineText": "next Monday"
+   },
+   {
+    "task": "Update billing API docs",
+    "owner": "Ameya",
+    "deadline": "2026-10-30",
+    "deadlineText": "Friday"
+   }
+  ]
+ },
+ "7368bda9ae97d5950213ad6b9e6ceb3b56e7917cd3a067e286a3cfbf7f425da0": {
+  "conflicts": [
+   {
+    "newDecision": "Use Mongo for billing.",
+    "conflictsWithId": "d1",
+    "reasoning": "Using Mongo for billing reverses the decision to standardize on Postgres as the primary database for all new services, which was made so the team could rely on familiar technology and avoid operating an extra database system."
+   }
+  ]
+ },
+ "c189497a5033c87e971bec896ebd2a38ccaaf1e85a5d78f09fb97a9f636c27e8": {
+  "intent": "edit",
+  "actionItems": [
+   {
+    "task": "Set up Mongo for billing",
+    "owner": "Gowtham",
+    "deadline": "2026-10-28",
+    "deadlineText": "Wednesday"
+   },
+   {
+    "task": "Set up Memcached cache layer",
+    "owner": "Priya",
+    "deadline": "2026-10-30",
+    "deadlineText": "Friday"
+   },
+   {
+    "task": "Write invoice migration plan",
+    "owner": "Priya",
+    "deadline": "2026-11-02",
+    "deadlineText": "next Monday"
+   },
+   {
+    "task": "Update billing API docs",
+    "owner": "Ameya",
+    "deadline": "2026-10-30",
+    "deadlineText": "Friday"
+   }
+  ],
+  "reply": "Done, the second task is now due Friday, October 30. Anything else?"
+ },
+ "9384fb2c16a082384ef2f274f423cd43692e728b04f20aef652af1f51356620d": {
+  "intent": "confirm",
+  "actionItems": [
+   {
+    "task": "Set up Mongo for billing",
+    "owner": "Gowtham",
+    "deadline": "2026-10-28",
+    "deadlineText": "Wednesday"
+   },
+   {
+    "task": "Set up Memcached cache layer",
+    "owner": "Priya",
+    "deadline": "2026-10-30",
+    "deadlineText": "Friday"
+   },
+   {
+    "task": "Write invoice migration plan",
+    "owner": "Priya",
+    "deadline": "2026-11-02",
+    "deadlineText": "next Monday"
+   },
+   {
+    "task": "Update billing API docs",
+    "owner": "Ameya",
+    "deadline": "2026-10-30",
+    "deadlineText": "Friday"
+   }
+  ],
+  "reply": "Got it, I'm creating these tasks now."
+ },
+ "8d8640a5540611425e50a5774eec1184dd0d294fa322ba716984182f5a377a2a": {
+  "decisions": [
+   {
+    "text": "Move billing back to Postgres.",
+    "madeBy": "Ameya"
+   }
+  ],
+  "actionItems": [
+   {
+    "task": "Write Mongo to Postgres export script",
+    "owner": "Gowtham",
+    "deadline": "2026-11-05",
+    "deadlineText": "Thursday"
+   },
+   {
+    "task": "Point cache layer at Postgres",
+    "owner": "Priya",
+    "deadline": "2026-11-09",
+    "deadlineText": "next Monday"
+   },
+   {
+    "task": "Update billing architecture doc",
+    "owner": "Ameya",
+    "deadline": "2026-11-06",
+    "deadlineText": "Friday"
+   }
+  ]
+ },
+ "53af16b36fefa106626de29c168a10b91179d37f4b64ccec8c90bbb1108ad253": {
+  "conflicts": [
+   {
+    "newDecision": "Move billing back to Postgres.",
+    "conflictsWithId": "L1",
+    "reasoning": "This reverses the current decision to use Mongo for billing, which was set in Sprint Planning 14. Switching to Postgres would break that active billing database choice."
+   }
+  ]
+ }
+}
