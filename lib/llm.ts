@@ -61,8 +61,39 @@ async function callAnthropic(system: string, user: string): Promise<string> {
   return json.content?.[0]?.text ?? "";
 }
 
+/** Local model via Ollama's native chat API. No key, no quota; quality and speed depend on the model and hardware. */
+async function callOllama(system: string, user: string): Promise<string> {
+  const base = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
+  let res: Response;
+  try {
+    res = await fetch(`${base}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: llmIdentity().model,
+        stream: false,
+        format: "json",
+        think: false, // reasoning models otherwise spend the budget on hidden thinking
+        options: { temperature: 0 },
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+      }),
+    });
+  } catch (e) {
+    throw new Error(`Cannot reach Ollama at ${base}. Is it running? (${e instanceof Error ? e.message : e})`);
+  }
+  if (!res.ok) throw new Error(`Ollama ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const content = (await res.json()).message?.content;
+  if (!content) throw new Error("Ollama returned no content");
+  return content;
+}
+
 /** Pull the first JSON object out of a reply that may have prose or code fences around it. */
-function extractJson(text: string): unknown {
+function extractJson(raw: string): unknown {
+  // Some local reasoning models leak <think>...</think> before the answer.
+  const text = raw.replace(/<think>[\s\S]*?<\/think>/g, "");
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start === -1 || end <= start) throw new Error("No JSON object in LLM reply");
@@ -93,6 +124,7 @@ async function writeCache(key: string, value: unknown) {
 const PROVIDERS: Record<string, (system: string, user: string) => Promise<string>> = {
   openrouter: callOpenRouter,
   anthropic: callAnthropic,
+  ollama: callOllama,
 };
 
 /** Call the configured LLM and validate its JSON reply against `schema`, retrying once on failure. */
